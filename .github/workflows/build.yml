@@ -21,13 +21,8 @@ jobs:
           cache: true
       - name: Generate Android platform folder
         run: flutter create . --project-name lexiflip --org uz.lexiflip --platforms=android
-      - name: Add INTERNET permission + TTS query
-        run: |
-          M=android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.INTERNET' $M || \
-            sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' $M
-          grep -q 'android.intent.action.TTS_SERVICE' $M || \
-            sed -i 's|</manifest>|    <queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE"/>\n        </intent>\n    </queries>\n</manifest>|' $M
+      - name: Patch Android project (permissions, receivers, desugaring)
+        run: python3 tool/patch_android.py
       - run: flutter pub get
       - name: Analyze code
         shell: bash

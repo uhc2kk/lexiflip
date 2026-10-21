@@ -10,6 +10,7 @@ class Deck {
     this.folderId,
     this.order = 0,
     this.legacyFolder = '',
+    this.starred = false,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -34,6 +35,9 @@ class Deck {
   /// v1.x stored the folder as a plain name; migrated into [Folder]s on start.
   final String legacyFolder;
 
+  /// ⭐ favourite deck — shown at the top of the home page.
+  final bool starred;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -43,6 +47,7 @@ class Deck {
     bool clearFolder = false,
     int? order,
     bool clearLegacy = false,
+    bool? starred,
   }) =>
       Deck(
         id: id,
@@ -50,6 +55,7 @@ class Deck {
         folderId: clearFolder ? null : (folderId ?? this.folderId),
         order: order ?? this.order,
         legacyFolder: clearLegacy ? '' : legacyFolder,
+        starred: starred ?? this.starred,
         createdAt: createdAt,
         updatedAt: DateTime.now().toUtc(),
       );
@@ -60,6 +66,7 @@ class Deck {
         if (folderId != null) 'folderId': folderId,
         'order': order,
         if (legacyFolder.isNotEmpty) 'folder': legacyFolder,
+        if (starred) 'starred': true,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'updatedAt': updatedAt.toUtc().toIso8601String(),
       };
@@ -75,6 +82,7 @@ class Deck {
       folderId: fid.isEmpty ? null : fid,
       order: int.tryParse((json['order'] ?? '0').toString()) ?? 0,
       legacyFolder: (json['folder'] ?? '').toString().trim(),
+      starred: json['starred'] == true,
       createdAt: date('createdAt'),
       updatedAt: date('updatedAt'),
     );

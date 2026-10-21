@@ -378,6 +378,76 @@ class S {
   String get statBosses => _t('boss g\'alabasi', 'boss wins', 'побед над боссом');
   String get statQuests => _t('vazifa', 'quests', 'заданий');
 
+  // ---------------- v2.1 ----------------
+  String get favouriteDecks => _t('Sevimli to\'plamlar', 'Favourite decks', 'Избранные наборы');
+  String get favouriteDeck => _t('Sevimlilarga qo\'shish', 'Add to favourites', 'В избранное');
+  String get unfavourite => _t('Sevimlilardan olish', 'Remove from favourites', 'Убрать из избранного');
+  String get hardest => _t('Eng qiyin so\'zlar', 'Hardest words', 'Самые трудные слова');
+  String hardestSub(int n) => _t('Eng ko\'p xato qilingan $n ta so\'z', 'Top $n most-missed words', 'Топ-$n слов с ошибками');
+  String get hardestEmptyShort => _t('Hali xato yo\'q', 'No mistakes yet', 'Ошибок пока нет');
+  String wordsN(int n) => _t('$n ta so\'z', '$n words', 'Слов: $n');
+  String inDays(int n) => n <= 0
+      ? _t('bugun', 'today', 'сегодня')
+      : _t('$n kunda', 'in $n d', 'через $n дн.');
+  String get quickAdd => _t('Tez qo\'shish', 'Quick add', 'Быстрое добавление');
+  String get quickAddHelp => _t(
+      'Har qatorga bitta so\'z. Ajratuvchi: " - ", "|", ";", "=" yoki Tab.\n'
+          '2 qism: so\'z - tarjima · 3 qism: + ikkinchi tarjima · 4 qism: so\'z ; o\'qilishi ; tarjima ; tarjima 2',
+      'One word per line. Separator: " - ", "|", ";", "=" or Tab.\n'
+          '2 parts: word - translation · 3 parts: + 2nd translation · 4 parts: word ; reading ; translation ; translation 2',
+      'Одно слово в строке. Разделитель: " - ", "|", ";", "=" или Tab.\n'
+          '2 части: слово - перевод · 3: + второй перевод · 4: слово ; чтение ; перевод ; перевод 2');
+  String get quickAddHint => _t('Ro\'yxatni shu yerga yopishtiring…', 'Paste your list here…', 'Вставьте список сюда…');
+  String get autoReading => _t('O\'qilishini avtomatik yozish', 'Generate reading automatically', 'Автоматически писать чтение');
+  String get autoReadingSub => _t(
+      'Arabcha so\'zlar uchun harakatlardan lotincha o\'qilish',
+      'Latin reading from harakat for Arabic words',
+      'Латинское чтение по огласовкам для арабских слов');
+  String preview(int n) => _t('Ko\'rinishi ($n ta)', 'Preview ($n)', 'Предпросмотр ($n)');
+  String addN(int n) => _t('Qo\'shish ($n)', 'Add ($n)', 'Добавить ($n)');
+  String quickAdded(int n, int skipped) => _t(
+      '$n ta so\'z qo\'shildi${skipped > 0 ? ' · $skipped ta takror o\'tkazib yuborildi' : ''}',
+      '$n words added${skipped > 0 ? ' · $skipped duplicates skipped' : ''}',
+      'Добавлено: $n${skipped > 0 ? ' · пропущено повторов: $skipped' : ''}');
+  String get readingFilled => _t(
+      'Arabcha so\'z: o\'qilishi harakatlardan yozildi. Tarjimani o\'zingiz kiriting.',
+      'Arabic word: reading generated from harakat. Please add the translation.',
+      'Арабское слово: чтение создано по огласовкам. Добавьте перевод.');
+  String get progress30 => _t('30 kunlik progress', '30-day progress', 'Прогресс за 30 дней');
+  String thisWeek(int n) => _t('${n >= 0 ? '+' : ''}$n bu hafta', '${n >= 0 ? '+' : ''}$n this week', '${n >= 0 ? '+' : ''}$n за неделю');
+  String daysAgo(int n) => _t('$n kun oldin', '$n days ago', '$n дн. назад');
+  String get yearCalendar => _t('Yillik kalendar', 'Year calendar', 'Календарь года');
+  String yearSummary(int days, int answers) =>
+      _t('$days kun faol · $answers javob', '$days active days · $answers answers', 'Активных дней: $days · ответов: $answers');
+  String get less => _t('Kam', 'Less', 'Мало');
+  String get more => _t('Ko\'p', 'More', 'Много');
+  String get arabicSection => _t('Arabcha yozuv', 'Arabic text', 'Арабский текст');
+  String get arabicFont => _t('Kitob shrifti (Amiri)', 'Book font (Amiri)', 'Книжный шрифт (Amiri)');
+  String wordSize(int pct) => _t('So\'z o\'lchami: $pct%', 'Word size: $pct%', 'Размер слова: $pct%');
+  String get reminder => _t('Kunlik eslatma', 'Daily reminder', 'Ежедневное напоминание');
+  String get reminderToggle => _t('Eslatmani yoqish', 'Turn on reminder', 'Включить напоминание');
+  String get reminderSub => _t(
+      'Kunlik maqsad bajarilmagan bo\'lsa, belgilangan soatda xabar keladi',
+      'A notification at the chosen time if today\'s goal isn\'t done yet',
+      'Уведомление в выбранное время, если цель дня не выполнена');
+  String get reminderUnsupported => _t(
+      'Bu qurilmada mavjud emas (faqat Windows va Android)',
+      'Not available on this device (Windows and Android only)',
+      'Недоступно на этом устройстве (только Windows и Android)');
+  String get reminderTime => _t('Eslatma vaqti', 'Reminder time', 'Время напоминания');
+  String get reminderDenied => _t(
+      'Bildirishnomaga ruxsat berilmadi. Telefon sozlamalaridan LexiFlip\'ga ruxsat bering.',
+      'Notification permission denied. Allow it for LexiFlip in system settings.',
+      'Нет разрешения на уведомления. Разрешите их для LexiFlip в настройках.');
+  String get reminderBody => _t(
+      'Bugun hali mashq qilmadingiz — 5 daqiqa ajrating! 📚',
+      'You haven\'t practised today — take 5 minutes! 📚',
+      'Сегодня ещё не было тренировки — уделите 5 минут! 📚');
+  String reminderStreak(int n) => _t(
+      '🔥 $n kunlik seriyangizni yo\'qotmang — bugungi maqsadni bajaring!',
+      '🔥 Keep your $n-day streak — finish today\'s goal!',
+      '🔥 Не потеряйте серию из $n дн. — выполните цель дня!');
+
   // ---------------- Settings ----------------
   String get appLanguage => _t('Ilova tili', 'App language', 'Язык приложения');
   String get cardDisplay => _t('Karta ko\'rinishi', 'Card display', 'Вид карточки');

@@ -5,9 +5,12 @@ import '../l10n/strings.dart';
 import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../providers/stats_provider.dart';
+import '../widgets/word_style.dart';
 import 'card_editor_screen.dart';
 import 'home_screen.dart' show BucketBar, BucketColors;
+import 'quick_add_screen.dart';
 import 'study_screen.dart';
+import '../widgets/progress_chart.dart';
 import 'sync_actions.dart';
 import 'ui_helpers.dart';
 
@@ -99,6 +102,8 @@ class _HubScreenState extends State<HubScreen> {
       case SourceKind.multi:
         return (t.selectedDecks(_src.deckIds.length),
             _src.deckIds.map((id) => lib.deckById(id)?.name).whereType<String>().join(', '));
+      case SourceKind.hardest:
+        return ('💀 ${t.hardest}', t.hardestSub(kHardestSize));
     }
   }
 
@@ -146,7 +151,22 @@ class _HubScreenState extends State<HubScreen> {
             Text(subtitle, style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis),
         ]),
         actions: [
-          if (_isDeck) IconButton(tooltip: t.addWord, icon: const Icon(Icons.add_rounded), onPressed: _addCard),
+          if (_isDeck) ...[
+            IconButton(
+              tooltip: t.favouriteDeck,
+              icon: Icon(lib.deckById(_src.id)!.starred ? Icons.star_rounded : Icons.star_outline_rounded,
+                  color: lib.deckById(_src.id)!.starred ? const Color(0xFFF5B301) : null),
+              onPressed: () => lib.toggleDeckStar(_src.id),
+            ),
+            IconButton(
+              tooltip: t.quickAdd,
+              icon: const Icon(Icons.playlist_add_rounded),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => QuickAddScreen(deckId: _src.id),
+              )),
+            ),
+            IconButton(tooltip: t.addWord, icon: const Icon(Icons.add_rounded), onPressed: _addCard),
+          ],
           PopupMenuButton<String>(
             onSelected: _menu,
             itemBuilder: (_) => [
@@ -210,6 +230,19 @@ class _HubScreenState extends State<HubScreen> {
                     tile('🐉', t.bossTitle, t.bossSub, StudyMode.boss),
                   ]);
                 }),
+                if (_src.kind != SourceKind.hardest && _src.kind != SourceKind.starred) ...[
+                  const SizedBox(height: 16),
+                  ProgressChartCard(
+                    deckIds: switch (_src.kind) {
+                      SourceKind.deck => [_src.id],
+                      SourceKind.folder => lib.decksInTree(_src.id).map((d) => d.id).toList(),
+                      SourceKind.multi => _src.deckIds,
+                      _ => lib.decks.map((d) => d.id).toList(),
+                    },
+                    learnedNow: counts.learned,
+                    total: counts.total,
+                  ),
+                ],
                 const SizedBox(height: 16),
                 TextField(
                   onChanged: (v) => setState(() => _query = v.trim()),
@@ -357,12 +390,15 @@ class CardRow extends StatelessWidget {
       CardStatus.review => Theme.of(context).colorScheme.outline,
     };
     final deckName = showDeck ? lib.deckById(card.deckId)?.name : null;
+    final due = card.status == CardStatus.learned && card.dueAt != null
+        ? card.dueAt!.difference(DateTime.now().toUtc()).inDays + 1
+        : null;
     return ListTile(
       leading: Icon(Icons.circle, size: 12, color: color),
       minLeadingWidth: 12,
-      title: Text(card.word, style: const TextStyle(fontSize: 18)),
+      title: Text(card.word, style: wordStyle(context, card.word, const TextStyle(fontSize: 18))),
       subtitle: Text(
-        [card.ipa, card.primaryTranslation, if (deckName != null) '📁 $deckName']
+        [card.ipa, card.primaryTranslation, if (due != null) '⏳ ${t.inDays(due)}', if (deckName != null) '📁 $deckName']
             .where((s) => s.isNotEmpty)
             .join('  ·  '),
         maxLines: 1,

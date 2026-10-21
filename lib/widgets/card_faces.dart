@@ -9,6 +9,7 @@ import '../l10n/strings.dart';
 import '../providers/settings_provider.dart';
 import '../screens/ui_helpers.dart';
 import '../services/tts_service.dart';
+import 'word_style.dart';
 
 /// Shared rounded surface for both card faces.
 class _CardSurface extends StatelessWidget {
@@ -81,9 +82,14 @@ class CardFront extends StatelessWidget {
             child: Text(
               card.word,
               textAlign: TextAlign.center,
-              style: theme.textTheme.displayMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
+              style: wordStyle(
+                context,
+                card.word,
+                theme.textTheme.displayMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                ),
+                scaled: true,
               ),
             ),
           ),

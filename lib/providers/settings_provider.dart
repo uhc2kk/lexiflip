@@ -42,6 +42,52 @@ class SettingsProvider extends ChangeNotifier {
     _autoSpeak = get<bool>('autoSpeak', false);
     _dailyGoal = get<int>('dailyGoal', 20);
     _appLang = AppLang.fromCode(get<String>('appLang', 'uz'));
+    _arabicFont = get<bool>('arabicFont', true);
+    _wordScale = get<double>('wordScale', 1.0);
+    _reminderOn = get<bool>('reminderOn', false);
+    _reminderHour = get<int>('reminderHour', 20);
+    _reminderMinute = get<int>('reminderMinute', 0);
+  }
+
+  // ---------------- Arabic font & word size ----------------
+  late bool _arabicFont;
+  late double _wordScale;
+
+  /// Show Arabic words in the book-style Amiri font.
+  bool get arabicFont => _arabicFont;
+
+  /// Multiplier for the big word on the card (0.8 – 2.0).
+  double get wordScale => _wordScale;
+
+  void setArabicFont(bool v) {
+    _arabicFont = v;
+    _put('arabicFont', v);
+    notifyListeners();
+  }
+
+  void setWordScale(double v) {
+    _wordScale = v.clamp(0.8, 2.0);
+    _put('wordScale', _wordScale);
+    notifyListeners();
+  }
+
+  // ---------------- Daily reminder ----------------
+  late bool _reminderOn;
+  late int _reminderHour;
+  late int _reminderMinute;
+
+  bool get reminderOn => _reminderOn;
+  int get reminderHour => _reminderHour;
+  int get reminderMinute => _reminderMinute;
+
+  void setReminder({bool? on, int? hour, int? minute}) {
+    _reminderOn = on ?? _reminderOn;
+    _reminderHour = hour ?? _reminderHour;
+    _reminderMinute = minute ?? _reminderMinute;
+    _put('reminderOn', _reminderOn);
+    _put('reminderHour', _reminderHour);
+    _put('reminderMinute', _reminderMinute);
+    notifyListeners();
   }
 
   late AppLang _appLang;

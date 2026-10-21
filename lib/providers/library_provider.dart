@@ -5,6 +5,7 @@ import '../models/deck.dart';
 import '../models/flashcard.dart';
 import '../models/folder.dart';
 import '../services/json_sync_service.dart';
+import '../services/quick_add.dart';
 import '../services/storage_service.dart';
 
 /// Bucket counts for a set of cards.
@@ -18,7 +19,13 @@ class DeckCounts {
 }
 
 /// What a study hub / session works on.
-enum SourceKind { deck, folder, starred, multi }
+enum SourceKind { deck, folder, starred, multi, hardest }
+
+/// Days until a learned word comes back to "Qaytarish", by level 1–6.
+const kReturnDays = [3, 7, 14, 30, 60, 120];
+
+/// How many words the "Eng qiyin so'zlar" list holds.
+const kHardestSize = 50;
 
 class CardSource {
   const CardSource.deck(this.id)
@@ -34,6 +41,10 @@ class CardSource {
   const CardSource.multi(this.deckIds)
       : kind = SourceKind.multi,
         id = '';
+  const CardSource.hardest()
+      : kind = SourceKind.hardest,
+        id = '',
+        deckIds = const [];
 
   final SourceKind kind;
   final String id;
@@ -45,6 +56,7 @@ class CardSource {
         SourceKind.folder => 'folder:$id',
         SourceKind.starred => 'starred',
         SourceKind.multi => 'multi:${([...deckIds]..sort()).join(',')}',
+        SourceKind.hardest => 'hardest',
       };
 }
 
@@ -52,6 +64,7 @@ class CardSource {
 class LibraryProvider extends ChangeNotifier {
   LibraryProvider() {
     _reload();
+    refreshDue();
   }
 
   final Box<Flashcard> _cardBox = StorageService.cards;
@@ -167,6 +180,8 @@ class LibraryProvider extends ChangeNotifier {
       case SourceKind.multi:
         final ids = s.deckIds.toSet();
         return _cards.where((c) => ids.contains(c.deckId)).toList();
+      case SourceKind.hardest:
+        return hardestCards;
     }
   }
 
@@ -190,6 +205,20 @@ class LibraryProvider extends ChangeNotifier {
   DeckCounts countsOfFolder(String folderId) => countsFor(CardSource.folder(folderId));
   DeckCounts get totalCounts => count(_cards);
   int get starredCount => _cards.where((c) => c.starred).length;
+
+  /// Words with the most mistakes (at least one), worst first.
+  List<Flashcard> get hardestCards {
+    final list = _cards.where((c) => c.wrong > 0).toList()
+      ..sort((a, b) {
+        final w = b.wrong.compareTo(a.wrong);
+        if (w != 0) return w;
+        double ratio(Flashcard c) => c.wrong / (c.wrong + c.correct);
+        return ratio(b).compareTo(ratio(a));
+      });
+    return list.take(kHardestSize).toList();
+  }
+
+  List<Deck> get starredDecks => _decks.where((d) => d.starred).toList();
 
   int get masteredDecks => _decks.where((d) {
         final c = countsOf(d.id);
@@ -303,6 +332,14 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> toggleDeckStar(String deckId) async {
+    final d = deckById(deckId);
+    if (d == null) return;
+    await _deckBox.put(d.id, d.copyWith(starred: !d.starred));
+    _reload();
+    notifyListeners();
+  }
+
   Future<void> deleteDeck(String deckId) async {
     await _cardBox.deleteAll(cardsOf(deckId).map((c) => c.id));
     await _deckBox.delete(deckId);
@@ -312,7 +349,7 @@ class LibraryProvider extends ChangeNotifier {
 
   Future<void> resetProgress(CardSource s) async {
     await _cardBox.putAll({
-      for (final c in cardsFor(s)) c.id: c.copyWith(status: CardStatus.review).touched(),
+      for (final c in cardsFor(s)) c.id: c.copyWith(status: CardStatus.review, level: 0, clearDue: true).touched(),
     });
     _reload();
     notifyListeners();
@@ -346,7 +383,54 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> setStatus(String id, CardStatus status) async {
     final card = cardById(id);
     if (card == null || card.status == status) return;
-    await upsertCard(card.copyWith(status: status).touched());
+    final learned = status == CardStatus.learned;
+    final level = learned ? (card.level < 1 ? 1 : card.level) : 0;
+    await upsertCard(card
+        .copyWith(
+          status: status,
+          level: level,
+          dueAt: learned ? DateTime.now().toUtc().add(Duration(days: kReturnDays[level - 1])) : null,
+          clearDue: !learned,
+        )
+        .touched());
+  }
+
+  /// Learned words whose time has come go back to "Qaytarish".
+  /// Returns how many moved. Called at start-up and when the app resumes.
+  Future<int> refreshDue() async {
+    final now = DateTime.now().toUtc();
+    final due = _cards
+        .where((c) => c.status == CardStatus.learned && c.dueAt != null && !c.dueAt!.isAfter(now))
+        .toList();
+    if (due.isEmpty) return 0;
+    await _cardBox.putAll({
+      for (final c in due) c.id: c.copyWith(status: CardStatus.review, clearDue: true).touched(),
+    });
+    _reload();
+    notifyListeners();
+    return due.length;
+  }
+
+  /// Adds parsed "word - translation" rows to a deck; skips words already
+  /// in it. Returns how many were added.
+  Future<int> quickAdd(String deckId, List<QuickRow> rows) async {
+    final existing = cardsOf(deckId).map((c) => c.word.trim().toLowerCase()).toSet();
+    final fresh = <Flashcard>[];
+    for (final r in rows) {
+      final key = r.word.trim().toLowerCase();
+      if (key.isEmpty || !existing.add(key)) continue;
+      fresh.add(Flashcard.create(
+        deckId: deckId,
+        word: r.word,
+        ipa: r.ipa,
+        primaryTranslation: r.primary,
+        secondaryTranslation: r.secondary,
+      ));
+    }
+    await _cardBox.putAll({for (final c in fresh) c.id: c});
+    _reload();
+    notifyListeners();
+    return fresh.length;
   }
 
   Future<void> toggleStar(String id) async {
@@ -361,10 +445,14 @@ class LibraryProvider extends ChangeNotifier {
     final card = cardById(id);
     if (card == null) return null;
     final now = DateTime.now().toUtc();
+    final level = known ? (card.level + 1).clamp(1, kReturnDays.length) : 0;
     await upsertCard(card.copyWith(
       status: known ? CardStatus.learned : CardStatus.problem,
       correct: card.correct + (known ? 1 : 0),
       wrong: card.wrong + (known ? 0 : 1),
+      level: level,
+      dueAt: known ? now.add(Duration(days: kReturnDays[level - 1])) : null,
+      clearDue: !known,
       lastReviewedAt: now,
       updatedAt: now,
     ));

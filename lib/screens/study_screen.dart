@@ -299,6 +299,7 @@ class _StudyScreenState extends State<StudyScreen> {
     });
 
     final before = await lib.answer(card.id, known: known);
+    await stats.snapshotDeck(card.deckId, lib.countsOf(card.deckId).learned);
     final reward = await stats.recordAnswer(
       known: known,
       becameLearned: known && before != CardStatus.learned,
@@ -307,7 +308,10 @@ class _StudyScreenState extends State<StudyScreen> {
       lib: lib,
     );
     _xp += reward.xp;
-    if (mounted) showReward(context, reward);
+    if (mounted) {
+      showReward(context, reward);
+      if (reward.goalReached) syncReminder(context);
+    }
     _busy = false;
 
     if (_finished) {

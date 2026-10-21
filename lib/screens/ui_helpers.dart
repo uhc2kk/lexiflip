@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../l10n/strings.dart';
 import '../models/gamification.dart';
 import '../providers/library_provider.dart';
+import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
+import '../services/reminder_service.dart';
 import '../services/tts_service.dart';
 
 void showSnack(BuildContext context, String msg) {
@@ -220,6 +222,23 @@ Future<DeckFormResult?> showDeckForm(
         ],
       );
     },
+  );
+}
+
+/// Re-schedules the daily reminder (skips today once the goal is done).
+Future<void> syncReminder(BuildContext context) async {
+  if (!ReminderService.supported) return;
+  final s = context.read<SettingsProvider>();
+  final stats = context.read<StatsProvider>();
+  final t = S.of(context);
+  final streak = stats.streak(s.dailyGoal);
+  await ReminderService.instance.schedule(
+    enabled: s.reminderOn,
+    hour: s.reminderHour,
+    minute: s.reminderMinute,
+    skipToday: stats.todayCount >= s.dailyGoal,
+    title: 'LexiFlip',
+    body: streak > 0 ? t.reminderStreak(streak) : t.reminderBody,
   );
 }
 

@@ -15,9 +15,38 @@ import 'settings_screen.dart';
 import 'sync_actions.dart';
 import 'ui_helpers.dart';
 
-/// Start page.
-class HomeScreen extends StatelessWidget {
+/// Start page. Also refreshes due words and the reminder on start / resume.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    if (!mounted) return;
+    await context.read<LibraryProvider>().refreshDue();
+    if (mounted) await syncReminder(context);
+  }
 
   @override
   Widget build(BuildContext context) => const FolderScreen(folderId: null);
@@ -135,6 +164,8 @@ class _FolderScreenState extends State<FolderScreen> {
     final t = S.of(context);
     final lib = context.read<LibraryProvider>();
     switch (action) {
+      case 'star':
+        await lib.toggleDeckStar(d.id);
       case 'edit':
         final res = await showDeckForm(context, title: t.editDeck, name: d.name, folderId: d.folderId);
         if (res != null) await lib.updateDeck(d, name: res.name, folderId: res.folderId);
@@ -257,7 +288,30 @@ class _FolderScreenState extends State<FolderScreen> {
                 const SizedBox(height: 10),
                 const QuestStrip(),
                 const SizedBox(height: 10),
-                _StarredTile(onTap: () => _open(const HubScreen(source: CardSource.starred()))),
+                Row(children: [
+                  Expanded(child: _StarredTile(onTap: () => _open(const HubScreen(source: CardSource.starred())))),
+                  const SizedBox(width: 10),
+                  Expanded(child: _HardestTile(onTap: () => _open(const HubScreen(source: CardSource.hardest())))),
+                ]),
+                if (lib.starredDecks.isNotEmpty) ...[
+                  _SectionTitle('⭐ ${t.favouriteDecks}'),
+                  for (final d in lib.starredDecks)
+                    _DeckTile(
+                      deck: d,
+                      handle: null,
+                      selecting: _selecting,
+                      selected: _selected.contains(d.id),
+                      subtitle: lib.folderPathNames(d.folderId).join(' › '),
+                      onTap: () {
+                        if (_selecting) {
+                          setState(() => _selected.contains(d.id) ? _selected.remove(d.id) : _selected.add(d.id));
+                        } else {
+                          _open(HubScreen(source: CardSource.deck(d.id)));
+                        }
+                      },
+                      onAction: (a) => _deckAction(d, a),
+                    ),
+                ],
               ] else
                 _FolderSummary(
                   folderId: widget.folderId!,
@@ -470,8 +524,10 @@ class _DeckTile extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.onAction,
+    this.subtitle,
   });
   final Deck deck;
+  final String? subtitle;
   final Widget? handle;
   final bool selecting;
   final bool selected;
@@ -501,7 +557,15 @@ class _DeckTile extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(deck.name, style: theme.textTheme.titleMedium),
+                Row(children: [
+                  Flexible(child: Text(deck.name, style: theme.textTheme.titleMedium, overflow: TextOverflow.ellipsis)),
+                  if (deck.starred) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.star_rounded, size: 18, color: Color(0xFFF5B301)),
+                  ],
+                ]),
+                if (subtitle != null && subtitle!.isNotEmpty)
+                  Text(subtitle!, style: theme.textTheme.bodySmall),
                 const SizedBox(height: 6),
                 BucketBar(counts: c),
                 const SizedBox(height: 6),
@@ -512,6 +576,7 @@ class _DeckTile extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: onAction,
                 itemBuilder: (_) => [
+                  PopupMenuItem(value: 'star', child: Text(deck.starred ? t.unfavourite : t.favouriteDeck)),
                   PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
                   PopupMenuItem(value: 'export', child: Text(t.exportJson)),
                   PopupMenuItem(value: 'delete', child: Text(t.delete)),
@@ -542,6 +607,31 @@ class _StarredTile extends StatelessWidget {
         leading: const Icon(Icons.star_rounded, color: Color(0xFFF5B301), size: 32),
         title: Text(t.starred),
         subtitle: Text(t.starredSub(n)),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _HardestTile extends StatelessWidget {
+  const _HardestTile({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = context.select<LibraryProvider, int>((l) => l.hardestCards.length);
+    final t = S.of(context);
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: const Text('💀', style: TextStyle(fontSize: 28)),
+        title: Text(t.hardest),
+        subtitle: Text(n == 0 ? t.hardestEmptyShort : t.wordsN(n)),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: onTap,
       ),

@@ -6,6 +6,7 @@ import '../models/gamification.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
+import '../widgets/year_heatmap.dart';
 import 'home_screen.dart' show QuestRow;
 
 /// Level, quests, last 7 days, records and tiered achievements.
@@ -84,6 +85,8 @@ class ChallengesScreen extends StatelessWidget {
               for (final q in stats.weeklyQuests) QuestRow(quest: q, weekly: true),
               header(t.last7Days),
               _WeekChart(stats: stats, goal: goal),
+              header('🗓️ ${t.yearCalendar}'),
+              YearHeatmap(daily: stats.dailyMap, goal: goal),
               header(t.overall),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 _StatChip('✨', '${stats.xp}', 'XP'),

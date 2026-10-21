@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
 import '../providers/settings_provider.dart';
+import '../services/reminder_service.dart';
+import 'ui_helpers.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -87,6 +89,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 secondary: const Icon(Icons.campaign_outlined),
                 title: Text(t.autoSpeak),
                 subtitle: Text(t.autoSpeakSub),
+              ),
+
+              header(t.arabicSection),
+              SwitchListTile(
+                value: s.arabicFont,
+                onChanged: s.setArabicFont,
+                secondary: const Text('ع', style: TextStyle(fontFamily: 'Amiri', fontSize: 26)),
+                title: Text(t.arabicFont),
+                subtitle: Text('بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
+                    style: TextStyle(fontFamily: s.arabicFont ? 'Amiri' : null, fontSize: 18)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.format_size_rounded),
+                title: Text(t.wordSize((s.wordScale * 100).round())),
+                subtitle: Slider(
+                  value: s.wordScale,
+                  min: 0.8,
+                  max: 2.0,
+                  divisions: 12,
+                  label: '${(s.wordScale * 100).round()}%',
+                  onChanged: s.setWordScale,
+                ),
+              ),
+
+              header('🔔 ${t.reminder}'),
+              SwitchListTile(
+                value: s.reminderOn && ReminderService.supported,
+                onChanged: ReminderService.supported
+                    ? (v) async {
+                        if (v && !await ReminderService.instance.requestPermission()) {
+                          if (context.mounted) showSnack(context, t.reminderDenied);
+                          return;
+                        }
+                        s.setReminder(on: v);
+                        if (context.mounted) await syncReminder(context);
+                      }
+                    : null,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: Text(t.reminderToggle),
+                subtitle: Text(ReminderService.supported ? t.reminderSub : t.reminderUnsupported),
+              ),
+              ListTile(
+                enabled: s.reminderOn && ReminderService.supported,
+                leading: const Icon(Icons.schedule_rounded),
+                title: Text(t.reminderTime),
+                trailing: Text(
+                  '${s.reminderHour.toString().padLeft(2, '0')}:${s.reminderMinute.toString().padLeft(2, '0')}',
+                  style: theme.textTheme.titleMedium,
+                ),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay(hour: s.reminderHour, minute: s.reminderMinute),
+                  );
+                  if (picked == null) return;
+                  s.setReminder(hour: picked.hour, minute: picked.minute);
+                  if (context.mounted) await syncReminder(context);
+                },
               ),
 
               header(t.dailyGoal),

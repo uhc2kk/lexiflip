@@ -6,6 +6,7 @@ import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/autofill_service.dart';
+import '../services/translit.dart';
 import '../services/tts_service.dart';
 import 'ui_helpers.dart';
 
@@ -66,6 +67,12 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     final word = _word.text.trim();
     if (word.isEmpty || _loading) return;
     final t = S.of(context);
+    if (detectScript(word) == WordScript.arabic) {
+      // Offline: generate the Latin reading from the harakat.
+      if (!onlyIfEmpty || _ipa.text.isEmpty) _ipa.text = arabicToLatin(word);
+      if (!onlyIfEmpty) showSnack(context, t.readingFilled);
+      return;
+    }
     if (detectScript(word) != WordScript.latin) {
       if (!onlyIfEmpty) showSnack(context, t.autofillEnglishOnly);
       return;

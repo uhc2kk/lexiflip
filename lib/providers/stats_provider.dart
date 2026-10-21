@@ -62,7 +62,56 @@ class StatsProvider extends ChangeNotifier {
     return n;
   }
 
+  /// Answers per day ("2026-10-21" → 37) — for the yearly calendar.
+  Map<String, int> get dailyMap => _map('daily');
+
   int best(String recordKey) => _map('best')[recordKey] ?? 0;
+
+  // ---------------- learned history (progress chart) ----------------
+
+  Map<String, Map<String, int>> get _history {
+    final raw = _box.get('lh', defaultValue: const {}) as Map;
+    return {
+      for (final e in raw.entries)
+        e.key.toString(): Map<String, int>.from(
+            (e.value as Map).map((k, v) => MapEntry(k.toString(), (v as num).toInt()))),
+    };
+  }
+
+  /// Remembers today's learned count of a deck.
+  Future<void> snapshotDeck(String deckId, int learned) async {
+    final all = _history;
+    (all[deckId] ??= {})[dayKey(DateTime.now())] = learned;
+    await _box.put('lh', all);
+  }
+
+  /// Learned words per day for the last [days] days (oldest first), summed
+  /// over [deckIds]. Days without a record repeat the previous value.
+  /// [today] overrides the last point with the live count.
+  List<int> learnedSeries(Iterable<String> deckIds, {int days = 30, required int today}) {
+    final hist = _history;
+    final now = DateTime.now();
+    final dates = [for (var i = days - 1; i >= 0; i--) dayKey(now.subtract(Duration(days: i)))];
+    final out = List<int>.filled(days, 0);
+    for (final id in deckIds) {
+      final h = hist[id];
+      if (h == null || h.isEmpty) continue;
+      final keys = h.keys.toList()..sort();
+      var last = 0;
+      var k = 0;
+      // value before the window starts
+      while (k < keys.length && keys[k].compareTo(dates.first) < 0) {
+        last = h[keys[k]]!;
+        k++;
+      }
+      for (var i = 0; i < days; i++) {
+        if (h.containsKey(dates[i])) last = h[dates[i]]!;
+        out[i] += last;
+      }
+    }
+    out[days - 1] = today;
+    return out;
+  }
   Map<String, int> get allBests => _map('best');
 
   int _bestOf(String prefix) =>

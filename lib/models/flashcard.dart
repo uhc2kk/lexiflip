@@ -32,6 +32,8 @@ class Flashcard {
     this.wrong = 0,
     this.lastReviewedAt,
     this.starred = false,
+    this.level = 0,
+    this.dueAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -75,6 +77,11 @@ class Flashcard {
 
   /// ⭐ "Saralangan" — collected for review across all decks.
   final bool starred;
+
+  /// Spaced return: how many times in a row the word was known (0–6) and
+  /// when a learned word goes back to "Qaytarish".
+  final int level;
+  final DateTime? dueAt;
   final DateTime createdAt;
 
   /// "Last write wins" key when merging imported decks.
@@ -94,6 +101,9 @@ class Flashcard {
     int? wrong,
     DateTime? lastReviewedAt,
     bool? starred,
+    int? level,
+    DateTime? dueAt,
+    bool clearDue = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -111,6 +121,8 @@ class Flashcard {
       wrong: wrong ?? this.wrong,
       lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
       starred: starred ?? this.starred,
+      level: level ?? this.level,
+      dueAt: clearDue ? null : (dueAt ?? this.dueAt),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -132,6 +144,8 @@ class Flashcard {
         'correct': correct,
         'wrong': wrong,
         if (starred) 'starred': true,
+        if (level > 0) 'level': level,
+        if (dueAt != null) 'dueAt': dueAt!.toUtc().toIso8601String(),
         if (lastReviewedAt != null)
           'lastReviewedAt': lastReviewedAt!.toUtc().toIso8601String(),
         'createdAt': createdAt.toUtc().toIso8601String(),
@@ -162,6 +176,8 @@ class Flashcard {
       wrong: number('wrong'),
       lastReviewedAt: maybeDate('lastReviewedAt'),
       starred: json['starred'] == true || json['starred'].toString() == 'true',
+      level: number('level'),
+      dueAt: maybeDate('dueAt'),
       createdAt: created,
       updatedAt: maybeDate('updatedAt') ?? created,
     );
