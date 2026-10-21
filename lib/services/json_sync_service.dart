@@ -5,7 +5,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/flashcard.dart';
-import 'file_bridge.dart';
 
 class MergeResult {
   const MergeResult(this.toWrite, this.added, this.updated, this.skipped);
@@ -110,13 +109,23 @@ class JsonSyncService {
 
   /// Opens a save dialog (Android/Desktop) or triggers a download (Web).
   /// Returns a path / filename, or null if the user cancelled.
-  static Future<String?> exportToFile(List<Flashcard> cards) {
+  static Future<String?> exportToFile(List<Flashcard> cards) async {
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
     final name = 'lexiflip_${now.year}${two(now.month)}${two(now.day)}_'
         '${two(now.hour)}${two(now.minute)}.json';
     final bytes = Uint8List.fromList(utf8.encode(encode(cards)));
-    return saveBytes(name, bytes);
+
+    // file_picker writes the bytes itself on every platform:
+    // Android = "Save as" (SAF), Desktop = native dialog, Web = download.
+    final uri = await FilePicker.saveFile(
+      dialogTitle: 'Export LexiFlip deck',
+      fileName: name,
+      bytes: bytes,
+      mimeType: 'application/json',
+    );
+    if (uri == null) return kIsWeb ? name : null;
+    return uri.isScheme('file') ? uri.toFilePath() : name;
   }
 
   /// Lets the user pick a .json file and parses it.
@@ -127,18 +136,14 @@ class JsonSyncService {
     final isAndroid =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-    final result = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.pickFile(
       dialogTitle: 'Import LexiFlip deck',
       type: isAndroid ? FileType.any : FileType.custom,
       allowedExtensions: isAndroid ? null : const ['json'],
-      withData: true,
     );
-    if (result == null || result.files.isEmpty) return null;
+    if (file == null) return null;
 
-    final bytes = result.files.single.bytes;
-    if (bytes == null) {
-      throw StateError('Could not read the selected file.');
-    }
+    final bytes = await file.readAsBytes();
     return decode(utf8.decode(bytes, allowMalformed: true));
   }
 }

@@ -19,7 +19,7 @@ flutter run -d windows     # Windows desktop
 flutter run -d <android>   # Android device / emulator
 ```
 
-Requires Flutter 3.27+.
+Requires Flutter 3.38+.
 
 ### Required platform tweaks (after `flutter create`)
 
@@ -54,9 +54,6 @@ lib/
 ├── services/
 │   ├── storage_service.dart      Hive init / boxes
 │   ├── json_sync_service.dart    Export / import / merge logic
-│   ├── file_bridge.dart          Conditional export (io vs web)
-│   ├── file_bridge_io.dart       Android + Desktop save dialog
-│   ├── file_bridge_web.dart      Browser download
 │   ├── autofill_service.dart     Gemini / Free Dictionary / MyMemory
 │   └── tts_service.dart          flutter_tts wrapper
 ├── widgets/
