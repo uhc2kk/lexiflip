@@ -62,3 +62,28 @@ jobs:
         with:
           name: LexiFlip-windows
           path: build/windows/x64/runner/Release/
+
+  release:
+    name: Publish GitHub Release
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Prepare files
+        run: |
+          cp dist/LexiFlip-android-apk/app-release.apk LexiFlip.apk
+          (cd dist/LexiFlip-windows && zip -qr ../../LexiFlip-windows.zip .)
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: LexiFlip build ${{ github.run_number }}
+          body: |
+            **Android:** LexiFlip.apk — telefonga yuklab, o'rnating.
+            **Windows:** LexiFlip-windows.zip — oching, lexiflip.exe ni ishga tushiring.
+          files: |
+            LexiFlip.apk
+            LexiFlip-windows.zip
