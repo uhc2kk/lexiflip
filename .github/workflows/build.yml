@@ -27,7 +27,19 @@ jobs:
           grep -q 'android.permission.INTERNET' $M || \
             sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' $M
       - run: flutter pub get
-      - run: flutter build apk --release
+      - name: Build APK
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee build.log
+      - name: Show build errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -nE "error|Error|What went wrong|FAILURE|Exception|e: " build.log | head -40 > err.txt || true
+          tail -40 build.log >> err.txt
+          msg=$(sed 's/%/%25/g' err.txt | awk '{printf "%s%%0A", $0}')
+          echo "::error title=APK build log::${msg}"
       - uses: actions/upload-artifact@v4
         with:
           name: LexiFlip-android-apk
