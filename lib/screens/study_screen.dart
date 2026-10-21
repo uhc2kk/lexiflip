@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
@@ -283,34 +284,35 @@ class _StudyScreenState extends State<StudyScreen> {
 
   // ---------------- UI ----------------
 
-  String get _title => switch (widget.mode) {
-        StudyMode.practice => 'Mashq',
-        StudyMode.battle => '⚔️ Muammolilar jangi',
-        StudyMode.blitz => '⏱️ Tezkor raund',
-        StudyMode.browse => 'Ko\'rib chiqish',
+  String _title(S t) => switch (widget.mode) {
+        StudyMode.practice => t.modePractice,
+        StudyMode.battle => t.modeBattle,
+        StudyMode.blitz => t.modeBlitz,
+        StudyMode.browse => t.modeBrowse,
       };
 
   @override
   Widget build(BuildContext context) {
     context.watch<LibraryProvider>(); // live mnemonic / edits
     final theme = Theme.of(context);
+    final t = S.of(context);
     final card = _current;
     final showKeyHints = kIsWeb || defaultTargetPlatform != TargetPlatform.android;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_title),
+        title: Text(_title(t)),
         actions: [
           if (card != null && !_finished)
             IconButton(
-              tooltip: 'Tahrirlash',
+              tooltip: t.edit,
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => CardEditorScreen(deckId: card.deckId, cardId: card.id),
               )),
             ),
           if (_scored && !_finished && widget.mode != StudyMode.blitz)
-            TextButton(onPressed: _finish, child: const Text('Tugatish')),
+            TextButton(onPressed: _finish, child: Text(t.finish)),
         ],
       ),
       body: SafeArea(
@@ -352,8 +354,8 @@ class _StudyScreenState extends State<StudyScreen> {
                         if (fresh.isEmpty) {
                           Navigator.of(context).pop();
                           showSnack(context, widget.mode == StudyMode.battle
-                              ? 'Muammoli so\'z qolmadi — zo\'r!'
-                              : 'Hamma so\'zlar yodlangan!');
+                              ? t.noProblemLeft
+                              : t.allLearnedShort);
                           return;
                         }
                         _restart(widget.mode, fresh);
@@ -361,7 +363,7 @@ class _StudyScreenState extends State<StudyScreen> {
                     )
                   : Column(
                       children: [
-                        _header(theme),
+                        _header(theme, t),
                         const SizedBox(height: 16),
                         Expanded(
                           child: GestureDetector(
@@ -397,13 +399,11 @@ class _StudyScreenState extends State<StudyScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _controls(theme),
+                        _controls(theme, t),
                         if (showKeyHints) ...[
                           const SizedBox(height: 10),
                           Text(
-                            widget.mode == StudyMode.browse
-                                ? 'Space aylantirish · ← → o\'tish · P talaffuz'
-                                : 'Space aylantirish · ← / 1 bilmayman · → / 2 bilaman · P talaffuz',
+                            widget.mode == StudyMode.browse ? t.keyHintBrowse : t.keyHintScored,
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                           ),
@@ -417,13 +417,13 @@ class _StudyScreenState extends State<StudyScreen> {
     );
   }
 
-  Widget _header(ThemeData theme) {
+  Widget _header(ThemeData theme, S t) {
     switch (widget.mode) {
       case StudyMode.blitz:
         final frac = _secondsLeft / _blitzSeconds;
         return Column(children: [
           Row(children: [
-            Text(_blitzStarted ? '$_secondsLeft s' : 'Boshlash uchun kartani bosing',
+            Text(_blitzStarted ? '$_secondsLeft s' : t.tapToStart,
                 style: theme.textTheme.titleMedium),
             const Spacer(),
             Text('✅ $_known', style: theme.textTheme.titleMedium),
@@ -442,7 +442,7 @@ class _StudyScreenState extends State<StudyScreen> {
         final left = _queue.length;
         return Column(children: [
           Row(children: [
-            Text('Dushmanlar: $left', style: theme.textTheme.titleMedium),
+            Text(t.enemiesLeft(left), style: theme.textTheme.titleMedium),
             const Spacer(),
             Text('🗡️ $_defeated / $_enemies', style: theme.textTheme.titleMedium),
           ]),
@@ -475,13 +475,13 @@ class _StudyScreenState extends State<StudyScreen> {
     }
   }
 
-  Widget _controls(ThemeData theme) {
+  Widget _controls(ThemeData theme, S t) {
     if (widget.mode == StudyMode.browse) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton.outlined(
-            tooltip: 'Oldingi (←)',
+            tooltip: t.prev,
             onPressed: () => _browse(-1),
             icon: const Icon(Icons.arrow_back_rounded),
           ),
@@ -489,11 +489,11 @@ class _StudyScreenState extends State<StudyScreen> {
           FilledButton.tonalIcon(
             onPressed: _toggleFlip,
             icon: const Icon(Icons.flip_rounded),
-            label: Text(_flipped ? 'So\'zni ko\'rish' : 'Tarjimani ko\'rish'),
+            label: Text(_flipped ? t.showWord : t.showMeaning),
           ),
           const SizedBox(width: 16),
           IconButton.outlined(
-            tooltip: 'Keyingi (→)',
+            tooltip: t.next,
             onPressed: () => _browse(1),
             icon: const Icon(Icons.arrow_forward_rounded),
           ),
@@ -507,7 +507,7 @@ class _StudyScreenState extends State<StudyScreen> {
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
         onPressed: _toggleFlip,
         icon: const Icon(Icons.flip_rounded),
-        label: const Text('Tarjimani ko\'rish'),
+        label: Text(t.showMeaning),
       );
     }
     return Row(children: [
@@ -520,7 +520,7 @@ class _StudyScreenState extends State<StudyScreen> {
           ),
           onPressed: () => _answer(known: false),
           icon: const Icon(Icons.close_rounded),
-          label: const Text('Bilmayman'),
+          label: Text(t.dontKnow),
         ),
       ),
       const SizedBox(width: 12),
@@ -533,7 +533,7 @@ class _StudyScreenState extends State<StudyScreen> {
           ),
           onPressed: () => _answer(known: true),
           icon: const Icon(Icons.check_rounded),
-          label: const Text('Bilaman'),
+          label: Text(t.know),
         ),
       ),
     ]);
@@ -566,19 +566,20 @@ class _Summary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final t = S.of(context);
     final (emoji, title, subtitle) = switch (mode) {
       StudyMode.blitz => (
           newRecord ? '🏆' : '⏱️',
-          newRecord ? 'Yangi rekord!' : 'Vaqt tugadi',
-          '60 soniyada $known ta so\'z topdingiz',
+          newRecord ? t.newRecord : t.timeUp,
+          t.blitzResult(known),
         ),
       StudyMode.battle => won
-          ? ('⚔️', 'G\'alaba!', 'Barcha $enemies ta muammoli so\'z yengildi')
-          : ('🛡️', 'Jang to\'xtatildi', '$defeated / $enemies ta dushman yengildi'),
+          ? ('⚔️', t.victory, t.victoryMsg(enemies))
+          : ('🛡️', t.battleStopped, t.battleProgress(defeated, enemies)),
       _ => (
           unknown == 0 && known > 0 ? '🎉' : '👍',
-          'Mashq tugadi',
-          '$known ta bildingiz · $unknown ta muammoli',
+          t.practiceDone,
+          t.practiceResult(known, unknown),
         ),
     };
 
@@ -598,7 +599,7 @@ class _Summary extends StatelessWidget {
                 style: FilledButton.styleFrom(minimumSize: const Size(260, 48)),
                 onPressed: onRepeatMissed,
                 icon: const Icon(Icons.replay_rounded),
-                label: const Text('Bilmaganlarimni takrorlash'),
+                label: Text(t.repeatMissed),
               ),
               const SizedBox(height: 10),
             ],
@@ -606,12 +607,12 @@ class _Summary extends StatelessWidget {
               style: OutlinedButton.styleFrom(minimumSize: const Size(260, 48)),
               onPressed: onAgain,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Yana bir bor'),
+              label: Text(t.again),
             ),
             const SizedBox(height: 10),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Orqaga'),
+              child: Text(t.back),
             ),
           ],
         ),

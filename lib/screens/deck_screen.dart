@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../providers/stats_provider.dart';
@@ -35,12 +36,13 @@ class _DeckScreenState extends State<DeckScreen> {
           StudyMode.blitz || StudyMode.browse => lib.cardsOf(widget.deckId),
         };
     if (list.isEmpty) {
+      final t = S.of(context);
       showSnack(
         context,
         switch (mode) {
-          StudyMode.battle => 'Muammoli so\'z yo\'q — zo\'r!',
-          StudyMode.practice => 'Hamma so\'zlar yodlangan! "Hammasini ko\'rish"ni sinab ko\'ring.',
-          _ => 'To\'plamda so\'z yo\'q.',
+          StudyMode.battle => t.noProblemWords,
+          StudyMode.practice => t.allLearned,
+          _ => t.deckEmpty,
         },
       );
       return;
@@ -58,24 +60,25 @@ class _DeckScreenState extends State<DeckScreen> {
     final lib = context.read<LibraryProvider>();
     final deck = lib.deckById(widget.deckId);
     if (deck == null) return;
+    final t = S.of(context);
     switch (v) {
       case 'edit':
         final res = await showDeckForm(context,
-            title: 'To\'plamni tahrirlash', name: deck.name, folder: deck.folder);
+            title: t.editDeck, name: deck.name, folder: deck.folder);
         if (res != null) await lib.updateDeck(deck, name: res.name, folder: res.folder);
       case 'export':
         await SyncActions.export(context, deck: deck);
       case 'reset':
         final ok = await confirm(context,
-            title: 'Natijalarni tozalash',
-            message: 'Barcha so\'zlar "Qaytarilishi kerak" bo\'limiga qaytadi.',
-            ok: 'Tozalash');
+            title: t.resetProgress,
+            message: t.resetProgressMsg,
+            ok: t.reset);
         if (ok) await lib.resetProgress(deck.id);
       case 'delete':
         final ok = await confirm(context,
-            title: 'O\'chirilsinmi?',
-            message: '"${deck.name}" va undagi barcha so\'zlar o\'chiriladi.',
-            ok: 'O\'chirish',
+            title: t.deleteQ,
+            message: t.deleteDeckAllMsg(deck.name),
+            ok: t.delete,
             danger: true);
         if (ok) {
           await lib.deleteDeck(deck.id);
@@ -87,9 +90,10 @@ class _DeckScreenState extends State<DeckScreen> {
   @override
   Widget build(BuildContext context) {
     final lib = context.watch<LibraryProvider>();
+    final t = S.of(context);
     final deck = lib.deckById(widget.deckId);
     if (deck == null) {
-      return Scaffold(appBar: AppBar(), body: const Center(child: Text('To\'plam topilmadi')));
+      return Scaffold(appBar: AppBar(), body: Center(child: Text(t.deckNotFound)));
     }
     final counts = lib.countsOf(deck.id);
     final best = context.watch<StatsProvider>().bestBlitz(deck.id);
@@ -118,14 +122,14 @@ class _DeckScreenState extends State<DeckScreen> {
           ],
         ),
         actions: [
-          IconButton(tooltip: 'So\'z qo\'shish', icon: const Icon(Icons.add_rounded), onPressed: _addCard),
+          IconButton(tooltip: t.addWord, icon: const Icon(Icons.add_rounded), onPressed: _addCard),
           PopupMenuButton<String>(
             onSelected: _deckMenu,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('Nomi / papkasi')),
-              PopupMenuItem(value: 'export', child: Text('Eksport (JSON)')),
-              PopupMenuItem(value: 'reset', child: Text('Natijalarni tozalash')),
-              PopupMenuItem(value: 'delete', child: Text('To\'plamni o\'chirish')),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
+              PopupMenuItem(value: 'export', child: Text(t.exportJson)),
+              PopupMenuItem(value: 'reset', child: Text(t.resetProgress)),
+              PopupMenuItem(value: 'delete', child: Text(t.deleteDeck)),
             ],
           ),
         ],
@@ -141,7 +145,7 @@ class _DeckScreenState extends State<DeckScreen> {
                   // ---- Buckets ----
                   Row(children: [
                     _BucketTile(
-                      label: 'Yodlangan',
+                      label: t.learned,
                       count: counts.learned,
                       color: BucketColors.learned(context),
                       icon: Icons.check_circle_rounded,
@@ -151,7 +155,7 @@ class _DeckScreenState extends State<DeckScreen> {
                     ),
                     const SizedBox(width: 8),
                     _BucketTile(
-                      label: 'Muammoli',
+                      label: t.problem,
                       count: counts.problem,
                       color: BucketColors.problem(context),
                       icon: Icons.error_rounded,
@@ -161,7 +165,7 @@ class _DeckScreenState extends State<DeckScreen> {
                     ),
                     const SizedBox(width: 8),
                     _BucketTile(
-                      label: 'Qaytarish',
+                      label: t.review,
                       count: counts.review,
                       color: BucketColors.review(context),
                       icon: Icons.replay_rounded,
@@ -179,14 +183,14 @@ class _DeckScreenState extends State<DeckScreen> {
                     style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
                     onPressed: () => _open(StudyMode.practice),
                     icon: const Icon(Icons.play_arrow_rounded),
-                    label: Text('Mashq qilish (${counts.review + counts.problem})'),
+                    label: Text(t.practiceBtn(counts.review + counts.problem)),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
                     onPressed: () => _open(StudyMode.browse),
                     icon: const Icon(Icons.style_outlined),
-                    label: Text('Hammasini ko\'rish (${counts.total})'),
+                    label: Text(t.browseAllBtn(counts.total)),
                   ),
                   const SizedBox(height: 12),
 
@@ -195,8 +199,8 @@ class _DeckScreenState extends State<DeckScreen> {
                     Expanded(
                       child: _ChallengeButton(
                         emoji: '⏱️',
-                        title: 'Tezkor raund',
-                        subtitle: best > 0 ? 'Rekord: $best' : '60 soniya',
+                        title: t.blitzTitle,
+                        subtitle: best > 0 ? t.record(best) : t.sixtySeconds,
                         onTap: () => _open(StudyMode.blitz),
                       ),
                     ),
@@ -204,8 +208,8 @@ class _DeckScreenState extends State<DeckScreen> {
                     Expanded(
                       child: _ChallengeButton(
                         emoji: '⚔️',
-                        title: 'Muammolilar jangi',
-                        subtitle: '${counts.problem} ta dushman',
+                        title: t.battleTitle,
+                        subtitle: t.enemies(counts.problem),
                         onTap: () => _open(StudyMode.battle),
                       ),
                     ),
@@ -216,13 +220,13 @@ class _DeckScreenState extends State<DeckScreen> {
                   TextField(
                     onChanged: (v) => setState(() => _query = v.trim()),
                     decoration: InputDecoration(
-                      hintText: 'Qidirish',
+                      hintText: t.search,
                       prefixIcon: const Icon(Icons.search_rounded),
                       isDense: true,
                       border: const OutlineInputBorder(),
                       suffixText: _filter == null
-                          ? '${cards.length} ta'
-                          : '${_bucketName(_filter!)}: ${cards.length}',
+                          ? t.countSuffix(cards.length)
+                          : '${_bucketName(t, _filter!)}: ${cards.length}',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -238,9 +242,9 @@ class _DeckScreenState extends State<DeckScreen> {
                           ? FilledButton.icon(
                               onPressed: _addCard,
                               icon: const Icon(Icons.add_rounded),
-                              label: const Text('Birinchi so\'zni qo\'shish'),
+                              label: Text(t.firstWord),
                             )
-                          : const Text('Hech narsa topilmadi'),
+                          : Text(t.nothingFound),
                     ),
                   ),
                 )
@@ -261,10 +265,10 @@ class _DeckScreenState extends State<DeckScreen> {
   }
 }
 
-String _bucketName(CardStatus s) => switch (s) {
-      CardStatus.learned => 'Yodlangan',
-      CardStatus.problem => 'Muammoli',
-      CardStatus.review => 'Qaytarish',
+String _bucketName(S t, CardStatus s) => switch (s) {
+      CardStatus.learned => t.learned,
+      CardStatus.problem => t.problem,
+      CardStatus.review => t.review,
     };
 
 class _BucketTile extends StatelessWidget {
@@ -364,6 +368,7 @@ class _CardRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lib = context.read<LibraryProvider>();
+    final t = S.of(context);
     final color = switch (card.status) {
       CardStatus.learned => BucketColors.learned(context),
       CardStatus.problem => BucketColors.problem(context),
@@ -382,7 +387,7 @@ class _CardRow extends StatelessWidget {
         builder: (_) => CardEditorScreen(deckId: card.deckId, cardId: card.id),
       )),
       trailing: PopupMenuButton<CardStatus>(
-        tooltip: 'Bo\'limni o\'zgartirish',
+        tooltip: t.changeBucket,
         icon: const Icon(Icons.more_vert_rounded),
         onSelected: (s) => lib.setStatus(card.id, s),
         itemBuilder: (_) => [
@@ -390,7 +395,7 @@ class _CardRow extends StatelessWidget {
             CheckedPopupMenuItem(
               value: s,
               checked: card.status == s,
-              child: Text(_bucketName(s)),
+              child: Text(_bucketName(t, s)),
             ),
         ],
       ),

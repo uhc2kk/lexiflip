@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../services/storage_service.dart';
 
 /// Target languages offered for auto-fill translations (code -> name).
@@ -21,23 +22,6 @@ const Map<String, String> kTargetLanguages = {
   'ko': 'Korean',
 };
 
-const Map<String, String> kTargetLanguagesUz = {
-  'uz': 'O\'zbekcha',
-  'ru': 'Ruscha',
-  'ur': 'Urducha',
-  'tr': 'Turkcha',
-  'ar': 'Arabcha',
-  'kk': 'Qozoqcha',
-  'tg': 'Tojikcha',
-  'hi': 'Hindcha',
-  'fa': 'Forscha',
-  'de': 'Nemischa',
-  'fr': 'Fransuzcha',
-  'es': 'Ispancha',
-  'zh': 'Xitoycha',
-  'ja': 'Yaponcha',
-  'ko': 'Koreyscha',
-};
 
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider() {
@@ -57,6 +41,17 @@ class SettingsProvider extends ChangeNotifier {
     _showMnemonic = get<bool>('showMnemonic', true);
     _autoSpeak = get<bool>('autoSpeak', false);
     _dailyGoal = get<int>('dailyGoal', 20);
+    _appLang = AppLang.fromCode(get<String>('appLang', 'uz'));
+  }
+
+  late AppLang _appLang;
+  AppLang get appLang => _appLang;
+  S get strings => S(_appLang);
+
+  void setAppLang(AppLang l) {
+    _appLang = l;
+    _put('appLang', l.name);
+    notifyListeners();
   }
 
   late ThemeMode _themeMode;
@@ -72,7 +67,6 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   String get targetLang => _targetLang;
   String get targetLangName => kTargetLanguages[_targetLang] ?? _targetLang;
-  String get targetLangNameUz => kTargetLanguagesUz[_targetLang] ?? _targetLang;
   String get geminiKey => _geminiKey;
   String get geminiModel => _geminiModel;
   bool get hasGemini => _geminiKey.trim().isNotEmpty;

@@ -18,11 +18,6 @@ WordScript detectScript(String text) {
   return WordScript.latin;
 }
 
-String scriptLabel(String text) => switch (detectScript(text)) {
-      WordScript.arabic => 'ARABCHA',
-      WordScript.cyrillic => 'РУССКИЙ',
-      WordScript.latin => 'ENGLISH',
-    };
 
 /// Thin wrapper around flutter_tts (Android, Web, Windows, macOS).
 /// Picks the voice language from the word's script (English / Arabic /

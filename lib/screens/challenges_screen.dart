@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
@@ -17,6 +18,7 @@ class ChallengesScreen extends StatelessWidget {
     final lib = context.watch<LibraryProvider>();
     final goal = context.select<SettingsProvider, int>((s) => s.dailyGoal);
     final theme = Theme.of(context);
+    final t = S.of(context);
     final total = lib.totalCounts;
 
     Widget header(String t) => Padding(
@@ -30,7 +32,7 @@ class ChallengesScreen extends StatelessWidget {
     ]..sort((a, b) => b.$2.compareTo(a.$2));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Challenge va yutuqlar')),
+      appBar: AppBar(title: Text(t.challengesTitle)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
@@ -38,23 +40,23 @@ class ChallengesScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
               const DailyGoalCard(),
-              header('Oxirgi 7 kun'),
+              header(t.last7Days),
               _WeekChart(stats: stats, goal: goal),
-              header('Umumiy'),
+              header(t.overall),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _StatChip('📚', '${total.learned}', 'yodlangan'),
-                  _StatChip('🔴', '${total.problem}', 'muammoli'),
-                  _StatChip('🗂️', '${total.total}', 'jami so\'z'),
-                  _StatChip('✍️', '${stats.totalAnswers}', 'javob'),
-                  _StatChip('⚔️', '${stats.battleWins}', 'jang g\'alabasi'),
+                  _StatChip('📚', '${total.learned}', t.statLearned),
+                  _StatChip('🔴', '${total.problem}', t.statProblem),
+                  _StatChip('🗂️', '${total.total}', t.statTotal),
+                  _StatChip('✍️', '${stats.totalAnswers}', t.statAnswers),
+                  _StatChip('⚔️', '${stats.battleWins}', t.statBattles),
                 ],
               ),
-              header('Tezkor raund rekordlari'),
+              header(t.blitzRecords),
               if (records.isEmpty)
-                const Text('Hali rekord yo\'q. To\'plamni ochib "Tezkor raund"ni boshlang!')
+                Text(t.noRecords)
               else
                 for (final (i, r) in records.take(10).indexed)
                   ListTile(
@@ -62,9 +64,9 @@ class ChallengesScreen extends StatelessWidget {
                     leading: Text(['🥇', '🥈', '🥉'].elementAtOrNull(i) ?? '  ${i + 1}.',
                         style: const TextStyle(fontSize: 20)),
                     title: Text(r.$1),
-                    trailing: Text('${r.$2} ta', style: theme.textTheme.titleMedium),
+                    trailing: Text(t.wordsCount(r.$2), style: theme.textTheme.titleMedium),
                   ),
-              header('Yutuqlar (${stats.unlockedCount} / ${kAchievements.length})'),
+              header(t.achievementsTitle(stats.unlockedCount, kAchievements.length)),
               GridView.count(
                 crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 3,
                 shrinkWrap: true,
@@ -90,11 +92,10 @@ class _WeekChart extends StatelessWidget {
   final StatsProvider stats;
   final int goal;
 
-  static const _days = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final weekdays = S.of(context).weekdays;
     final now = DateTime.now();
     final days = [for (var i = 6; i >= 0; i--) now.subtract(Duration(days: i))];
     final counts = days.map(stats.countOn).toList();
@@ -124,7 +125,7 @@ class _WeekChart extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(_days[days[i].weekday - 1],
+                    Text(weekdays[days[i].weekday - 1],
                         style: theme.textTheme.labelSmall?.copyWith(
                           fontWeight: i == 6 ? FontWeight.w700 : null,
                         )),
@@ -172,8 +173,11 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final t = S.of(context);
+    final title = t.achievementTitle(achievement.id);
+    final desc = t.achievementDesc(achievement.id);
     return Tooltip(
-      message: achievement.description,
+      message: desc,
       triggerMode: TooltipTriggerMode.tap,
       child: Container(
         padding: const EdgeInsets.all(8),
@@ -190,13 +194,13 @@ class _Badge extends StatelessWidget {
             children: [
               Text(unlocked ? achievement.emoji : '🔒', style: const TextStyle(fontSize: 32)),
               const SizedBox(height: 6),
-              Text(achievement.title,
+              Text(title,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium),
               const SizedBox(height: 2),
-              Text(achievement.description,
+              Text(desc,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

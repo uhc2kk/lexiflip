@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/deck.dart';
 import '../providers/library_provider.dart';
 import '../services/json_sync_service.dart';
@@ -13,10 +14,11 @@ class SyncActions {
   /// Exports one deck, or every deck when [deck] is null.
   static Future<void> export(BuildContext context, {Deck? deck}) async {
     final lib = context.read<LibraryProvider>();
+    final t = S.of(context);
     final decks = deck == null ? lib.decks : [deck];
     final cards = deck == null ? lib.allCards : lib.cardsOf(deck.id);
     if (cards.isEmpty) {
-      showSnack(context, 'Eksport qilish uchun so\'z yo\'q.');
+      showSnack(context, t.nothingToExport);
       return;
     }
     try {
@@ -26,9 +28,9 @@ class SyncActions {
         baseName: deck == null ? 'hammasi' : '${deck.folder}_${deck.name}',
       );
       if (!context.mounted || saved == null) return;
-      showSnack(context, '${cards.length} ta so\'z saqlandi → $saved');
+      showSnack(context, t.exported(cards.length, saved));
     } catch (e) {
-      if (context.mounted) showSnack(context, 'Eksport xatosi: $e');
+      if (context.mounted) showSnack(context, t.exportError(e));
     }
   }
 
@@ -37,12 +39,13 @@ class SyncActions {
   /// for a name and folder first.
   static Future<void> import(BuildContext context) async {
     final lib = context.read<LibraryProvider>();
+    final t = S.of(context);
     try {
       final incoming = await JsonSyncService.pickAndDecode();
       if (!context.mounted || incoming == null) return;
       incoming.removeWhere((d) => d.cards.isEmpty);
       if (incoming.isEmpty) {
-        showSnack(context, 'Faylda so\'z topilmadi.');
+        showSnack(context, t.noWordsInFile);
         return;
       }
 
@@ -52,11 +55,11 @@ class SyncActions {
         if (d.id != null) continue;
         final res = await showDeckForm(
           context,
-          title: 'Yangi to\'plam',
-          subtitle: '${d.cards.length} ta so\'z import qilinadi',
+          title: t.newDeck,
+          subtitle: t.importWords(d.cards.length),
           name: d.name,
           folder: d.folder,
-          okLabel: 'Import',
+          okLabel: t.importBtn,
         );
         if (res == null || !context.mounted) return;
         d.name = res.name;
@@ -64,11 +67,11 @@ class SyncActions {
       }
 
       final result = await lib.importDecks(incoming);
-      if (context.mounted) showSnack(context, 'Import tayyor: $result');
-    } on FormatException catch (e) {
-      if (context.mounted) showSnack(context, 'Noto\'g\'ri fayl: ${e.message}');
+      if (context.mounted) showSnack(context, t.importDone(result.added, result.updated, result.skipped));
+    } on FormatException {
+      if (context.mounted) showSnack(context, t.invalidFile);
     } catch (e) {
-      if (context.mounted) showSnack(context, 'Import xatosi: $e');
+      if (context.mounted) showSnack(context, t.importError(e));
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -33,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<SettingsProvider>();
+    final t = S.of(context);
     final theme = Theme.of(context);
 
     Widget header(String t) => Padding(
@@ -41,47 +43,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sozlamalar')),
+      appBar: AppBar(title: Text(t.settings)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
             children: [
-              header('Karta ko\'rinishi'),
+              header(t.appLanguage),
+              SegmentedButton<AppLang>(
+                segments: [
+                  for (final l in AppLang.values)
+                    ButtonSegment(value: l, label: Text(l.label)),
+                ],
+                selected: {s.appLang},
+                onSelectionChanged: (v) => s.setAppLang(v.first),
+              ),
+              header(t.cardDisplay),
               SwitchListTile(
                 value: s.showPronunciation,
                 onChanged: s.setShowPronunciation,
                 secondary: const Icon(Icons.record_voice_over_outlined),
-                title: const Text('O\'qilishini ko\'rsatish'),
-                subtitle: const Text('So\'z ostidagi lotincha o\'qilish / IPA'),
+                title: Text(t.showPronunciation),
+                subtitle: Text(t.showPronunciationSub),
               ),
               SwitchListTile(
                 value: s.showSecondary,
                 onChanged: s.setShowSecondary,
                 secondary: const Icon(Icons.looks_two_outlined),
-                title: const Text('Ikkinchi tarjima'),
-                subtitle: const Text('Orqa tomondagi qo\'shimcha / inglizcha tarjima'),
+                title: Text(t.showSecondary),
+                subtitle: Text(t.showSecondarySub),
               ),
               SwitchListTile(
                 value: s.showMnemonic,
                 onChanged: s.setShowMnemonic,
                 secondary: const Icon(Icons.lightbulb_outline_rounded),
-                title: const Text('Eslatma maydoni'),
-                subtitle: const Text('Orqa tomonda mnemonic yozish joyi'),
+                title: Text(t.showMnemonic),
+                subtitle: Text(t.showMnemonicSub),
               ),
               SwitchListTile(
                 value: s.autoSpeak,
                 onChanged: s.setAutoSpeak,
                 secondary: const Icon(Icons.campaign_outlined),
-                title: const Text('Avto-talaffuz'),
-                subtitle: const Text('Yangi karta chiqqanda so\'zni o\'qib beradi'),
+                title: Text(t.autoSpeak),
+                subtitle: Text(t.autoSpeakSub),
               ),
 
-              header('Kunlik maqsad'),
+              header(t.dailyGoal),
               ListTile(
                 leading: const Icon(Icons.flag_outlined),
-                title: Text('Kuniga ${s.dailyGoal} ta so\'z'),
+                title: Text(t.perDay(s.dailyGoal)),
                 subtitle: Slider(
                   value: s.dailyGoal.toDouble(),
                   min: 5,
@@ -92,43 +103,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
 
-              header('Ko\'rinish'),
+              header(t.appearance),
               SegmentedButton<ThemeMode>(
-                segments: const [
-                  ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('Tizim')),
-                  ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Yorug\'')),
-                  ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Qorong\'i')),
+                segments: [
+                  ButtonSegment(value: ThemeMode.system, icon: const Icon(Icons.brightness_auto_outlined), label: Text(t.themeSystem)),
+                  ButtonSegment(value: ThemeMode.light, icon: const Icon(Icons.light_mode_outlined), label: Text(t.themeLight)),
+                  ButtonSegment(value: ThemeMode.dark, icon: const Icon(Icons.dark_mode_outlined), label: Text(t.themeDark)),
                 ],
                 selected: {s.themeMode},
                 onSelectionChanged: (v) => s.setThemeMode(v.first),
               ),
 
-              header('Avto-to\'ldirish (inglizcha so\'zlar)'),
+              header(t.autofillSection),
               DropdownMenu<String>(
                 initialSelection: s.targetLang,
                 expandedInsets: EdgeInsets.zero,
-                label: const Text('Tarjima tili'),
+                label: Text(t.translateInto),
                 onSelected: (v) {
                   if (v != null) s.setTargetLang(v);
                 },
                 dropdownMenuEntries: [
-                  for (final e in kTargetLanguagesUz.entries)
-                    DropdownMenuEntry(value: e.key, label: e.value),
+                  for (final code in kTargetLanguages.keys)
+                    DropdownMenuEntry(value: code, label: t.targetLangName(code)),
                 ],
               ),
               const SizedBox(height: 16),
-              Text(
-                'Gemini kaliti bo\'lsa, tarjimalar sifatliroq bo\'ladi. Bo\'lmasa bepul '
-                'Dictionary + MyMemory ishlatiladi. Kalit faqat shu qurilmada saqlanadi.',
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(t.geminiInfo, style: theme.textTheme.bodySmall),
               const SizedBox(height: 12),
               TextField(
                 controller: _key,
                 obscureText: _obscure,
                 onChanged: s.setGeminiKey,
                 decoration: InputDecoration(
-                  labelText: 'Gemini API kaliti (ixtiyoriy)',
+                  labelText: t.geminiKey,
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
@@ -140,19 +147,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               TextField(
                 controller: _model,
                 onChanged: s.setGeminiModel,
-                decoration: const InputDecoration(
-                  labelText: 'Gemini modeli',
-                  helperText: 'masalan: gemini-2.5-flash',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: t.geminiModel,
+                  helperText: t.geminiModelHelp,
+                  border: const OutlineInputBorder(),
                 ),
               ),
 
-              header('Klaviatura (kompyuter)'),
-              const _Shortcut(keys: 'Space', action: 'Kartani aylantirish'),
-              const _Shortcut(keys: '→ / 2', action: 'Bilaman'),
-              const _Shortcut(keys: '← / 1', action: 'Bilmayman'),
-              const _Shortcut(keys: 'P', action: 'Talaffuz'),
-              const _Shortcut(keys: 'Esc', action: 'Eslatma maydonidan chiqish'),
+              header(t.keyboard),
+              _Shortcut(keys: 'Space', action: t.kFlip),
+              _Shortcut(keys: '→ / 2', action: t.know),
+              _Shortcut(keys: '← / 1', action: t.dontKnow),
+              _Shortcut(keys: 'P', action: t.kPronounce),
+              _Shortcut(keys: 'Esc', action: t.kEsc),
             ],
           ),
         ),

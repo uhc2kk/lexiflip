@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
+import '../l10n/strings.dart';
 import '../providers/settings_provider.dart';
 import '../services/tts_service.dart';
 
@@ -66,7 +67,11 @@ class CardFront extends StatelessWidget {
         context.select<SettingsProvider, bool>((s) => s.showPronunciation);
 
     return _CardSurface(
-      label: scriptLabel(card.word),
+      label: switch (detectScript(card.word)) {
+        WordScript.arabic => S.of(context).labelArabic,
+        WordScript.cyrillic => S.of(context).labelRussian,
+        WordScript.latin => S.of(context).labelEnglish,
+      },
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -94,7 +99,7 @@ class CardFront extends StatelessWidget {
           ],
           const SizedBox(height: 20),
           IconButton.filledTonal(
-            tooltip: 'Talaffuz (P)',
+            tooltip: S.of(context).pronounce,
             iconSize: 28,
             onPressed: () => context.read<TtsService>().speak(card.word),
             icon: const Icon(Icons.volume_up_rounded),
@@ -120,7 +125,7 @@ class CardBack extends StatelessWidget {
     final settings = context.watch<SettingsProvider>();
 
     return _CardSurface(
-      label: 'TARJIMA',
+      label: S.of(context).labelMeaning,
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -253,7 +258,7 @@ class _MnemonicFieldState extends State<MnemonicField> {
       decoration: InputDecoration(
         isDense: true,
         prefixIcon: const Icon(Icons.lightbulb_outline_rounded, size: 20),
-        hintText: 'Eslatma / kalit so\'z…',
+        hintText: S.of(context).mnemonicHint,
         filled: true,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
@@ -64,10 +65,9 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   Future<void> _autofill({bool onlyIfEmpty = false}) async {
     final word = _word.text.trim();
     if (word.isEmpty || _loading) return;
+    final t = S.of(context);
     if (detectScript(word) != WordScript.latin) {
-      if (!onlyIfEmpty) {
-        showSnack(context, 'Avto-to\'ldirish faqat inglizcha so\'zlar uchun ishlaydi.');
-      }
+      if (!onlyIfEmpty) showSnack(context, t.autofillEnglishOnly);
       return;
     }
     if (onlyIfEmpty &&
@@ -93,10 +93,10 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
       if (r.secondary != null) _secondary.text = r.secondary!;
       if (r.example != null) _example.text = r.example!;
       if (!r.isComplete) {
-        showSnack(context, 'Qisman to\'ldirildi — bo\'sh joylarni o\'zingiz yozing.');
+        showSnack(context, t.autofillPartial);
       }
     } catch (e) {
-      if (mounted) showSnack(context, 'Avto-to\'ldirish: $e');
+      if (mounted) showSnack(context, '${t.autofill}: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -107,13 +107,14 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final lib = context.read<LibraryProvider>();
+    final t = S.of(context);
     final word = _word.text.trim();
 
     if (lib.wordExists(_deckId, word, exceptId: _original?.id)) {
       final ok = await confirm(context,
-          title: 'Takroriy so\'z',
-          message: '"$word" bu to\'plamda allaqachon bor. Baribir saqlansinmi?',
-          ok: 'Saqlash');
+          title: t.duplicateWord,
+          message: t.duplicateWordMsg(word),
+          ok: t.save);
       if (!ok) return;
     }
 
@@ -143,7 +144,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     if (!mounted) return;
     if (_isNew) {
       // Keep adding: clear the form for the next word.
-      showSnack(context, '"$word" qo\'shildi');
+      showSnack(context, t.wordAdded(word));
       for (final c in [_word, _ipa, _primary, _secondary, _example, _mnemonic]) {
         c.clear();
       }
@@ -153,10 +154,11 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   }
 
   Future<void> _delete() async {
+    final t = S.of(context);
     final ok = await confirm(context,
-        title: 'O\'chirilsinmi?',
-        message: '"${_original!.word}" o\'chiriladi.',
-        ok: 'O\'chirish',
+        title: t.deleteQ,
+        message: t.wordDeleteMsg(_original!.word),
+        ok: t.delete,
         danger: true);
     if (!ok || !mounted) return;
     await context.read<LibraryProvider>().deleteCard(_original!.id);
@@ -169,6 +171,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   Widget build(BuildContext context) {
     final lib = context.watch<LibraryProvider>();
     final settings = context.watch<SettingsProvider>();
+    final t = S.of(context);
 
     InputDecoration deco(String label, {String? hint, IconData? icon}) => InputDecoration(
           labelText: label,
@@ -179,17 +182,17 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isNew ? 'Yangi so\'z' : 'Tahrirlash'),
+        title: Text(_isNew ? t.newWord : t.edit),
         actions: [
           if (!_isNew)
             IconButton(
-              tooltip: 'O\'chirish',
+              tooltip: t.delete,
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: _delete,
             ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: FilledButton(onPressed: _save, child: const Text('Saqlash')),
+            child: FilledButton(onPressed: _save, child: Text(t.save)),
           ),
         ],
       ),
@@ -204,7 +207,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                 DropdownMenu<String>(
                   initialSelection: _deckId,
                   expandedInsets: EdgeInsets.zero,
-                  label: const Text('To\'plam'),
+                  label: Text(t.deck),
                   leadingIcon: const Icon(Icons.folder_outlined),
                   onSelected: (v) {
                     if (v != null) setState(() => _deckId = v);
@@ -221,14 +224,14 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                   style: const TextStyle(fontSize: 20),
                   textInputAction: TextInputAction.search,
                   onFieldSubmitted: (_) => _autofill(onlyIfEmpty: true),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'So\'z kiriting' : null,
-                  decoration: deco('So\'z (inglizcha / arabcha …)', icon: Icons.translate_rounded)
+                  validator: (v) => (v == null || v.trim().isEmpty) ? t.enterWord : null,
+                  decoration: deco(t.wordLabel, icon: Icons.translate_rounded)
                       .copyWith(
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          tooltip: 'Talaffuz',
+                          tooltip: t.kPronounce,
                           icon: const Icon(Icons.volume_up_outlined),
                           onPressed: () => context.read<TtsService>().speak(_word.text),
                         ),
@@ -244,7 +247,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                                   ),
                                 )
                               : IconButton.filledTonal(
-                                  tooltip: 'Avto-to\'ldirish',
+                                  tooltip: t.autofill,
                                   icon: const Icon(Icons.auto_awesome_rounded),
                                   onPressed: () => _autofill(),
                                 ),
@@ -256,41 +259,42 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 6, 4, 18),
                   child: Text(
-                    settings.hasGemini
-                        ? 'Avto-to\'ldirish: Gemini → ${settings.targetLangNameUz}'
-                        : 'Avto-to\'ldirish (inglizcha): Free Dictionary + MyMemory → ${settings.targetLangNameUz}',
+                    t.autofillVia(
+                      settings.hasGemini ? 'Gemini' : 'Free Dictionary + MyMemory',
+                      t.targetLangName(settings.targetLang),
+                    ),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
                 TextFormField(
                   controller: _ipa,
-                  decoration: deco('O\'qilishi / IPA',
+                  decoration: deco(t.ipaLabel,
                       hint: '/rɪˈzɪliənt/  yoki  bismi', icon: Icons.record_voice_over_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _primary,
-                  decoration: deco('Asosiy tarjima', icon: Icons.looks_one_outlined),
+                  decoration: deco(t.primaryLabel, icon: Icons.looks_one_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _secondary,
-                  decoration: deco('Ikkinchi tarjima / sinonim', icon: Icons.looks_two_outlined),
+                  decoration: deco(t.secondaryLabel, icon: Icons.looks_two_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _example,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: deco('Misol gap', icon: Icons.format_quote_rounded),
+                  decoration: deco(t.exampleLabel, icon: Icons.format_quote_rounded),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _mnemonic,
                   minLines: 1,
                   maxLines: 3,
-                  decoration: deco('Eslatma / kalit so\'z',
-                      hint: 'O\'zingizning eslab qolish usulingiz',
+                  decoration: deco(t.mnemonicLabel,
+                      hint: t.mnemonicFieldHint,
                       icon: Icons.lightbulb_outline_rounded),
                 ),
               ],

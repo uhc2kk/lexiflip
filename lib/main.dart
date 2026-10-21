@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/strings.dart';
 import 'providers/library_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/stats_provider.dart';
@@ -59,13 +60,17 @@ class LexiFlipApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mode = context.select<SettingsProvider, ThemeMode>((s) => s.themeMode);
-    return MaterialApp(
+    final lang = context.select<SettingsProvider, AppLang>((s) => s.appLang);
+    return L10nScope(
+      strings: S(lang),
+      child: MaterialApp(
       title: 'LexiFlip',
       debugShowCheckedModeBanner: false,
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: mode,
       home: const HomeScreen(),
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/deck.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
@@ -16,7 +17,8 @@ class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   Future<void> _newDeck(BuildContext context, {String folder = ''}) async {
-    final res = await showDeckForm(context, title: 'Yangi to\'plam', folder: folder, okLabel: 'Yaratish');
+    final t = S.of(context);
+    final res = await showDeckForm(context, title: t.newDeck, folder: folder, okLabel: t.create);
     if (res == null || !context.mounted) return;
     final deck = await context.read<LibraryProvider>().createDeck(res.name, folder: res.folder);
     if (!context.mounted) return;
@@ -27,6 +29,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final lib = context.watch<LibraryProvider>();
     final settings = context.read<SettingsProvider>();
+    final t = S.of(context);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -34,13 +37,13 @@ class HomeScreen extends StatelessWidget {
         title: const Text('LexiFlip'),
         actions: [
           IconButton(
-            tooltip: 'Challenge va yutuqlar',
+            tooltip: t.challengesTooltip,
             icon: const Icon(Icons.emoji_events_outlined),
             onPressed: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const ChallengesScreen())),
           ),
           IconButton(
-            tooltip: 'Mavzu',
+            tooltip: t.themeTooltip,
             icon: Icon(theme.brightness == Brightness.dark
                 ? Icons.light_mode_outlined
                 : Icons.dark_mode_outlined),
@@ -58,18 +61,18 @@ class HomeScreen extends StatelessWidget {
                       .push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
               }
             },
-            itemBuilder: (_) => const [
+            itemBuilder: (_) => [
               PopupMenuItem(
                 value: 'import',
-                child: ListTile(leading: Icon(Icons.download_rounded), title: Text('JSON import')),
+                child: ListTile(leading: const Icon(Icons.download_rounded), title: Text(t.importJson)),
               ),
               PopupMenuItem(
                 value: 'export',
-                child: ListTile(leading: Icon(Icons.upload_file_rounded), title: Text('Hammasini eksport')),
+                child: ListTile(leading: const Icon(Icons.upload_file_rounded), title: Text(t.exportAll)),
               ),
               PopupMenuItem(
                 value: 'settings',
-                child: ListTile(leading: Icon(Icons.settings_outlined), title: Text('Sozlamalar')),
+                child: ListTile(leading: const Icon(Icons.settings_outlined), title: Text(t.settings)),
               ),
             ],
           ),
@@ -79,7 +82,7 @@ class HomeScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _newDeck(context),
         icon: const Icon(Icons.add_rounded),
-        label: const Text('To\'plam'),
+        label: Text(t.deckFab),
       ),
       body: Center(
         child: ConstrainedBox(
@@ -114,6 +117,7 @@ class DailyGoalCard extends StatelessWidget {
     final stats = context.watch<StatsProvider>();
     final goal = context.select<SettingsProvider, int>((s) => s.dailyGoal);
     final theme = Theme.of(context);
+    final t = S.of(context);
     final today = stats.todayCount;
     final done = today >= goal;
     final streak = stats.streak(goal);
@@ -145,17 +149,17 @@ class DailyGoalCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(done ? 'Bugungi maqsad bajarildi!' : 'Bugungi maqsad',
+                  Text(done ? t.goalDone : t.goalToday,
                       style: theme.textTheme.titleMedium),
                   const SizedBox(height: 2),
-                  Text('$today / $goal ta so\'z', style: theme.textTheme.bodyMedium),
+                  Text(t.goalProgress(today, goal), style: theme.textTheme.bodyMedium),
                 ],
               ),
             ),
             Column(
               children: [
                 Text(streak > 0 ? '🔥' : '🌑', style: const TextStyle(fontSize: 26)),
-                Text('$streak kun', style: theme.textTheme.labelMedium),
+                Text(t.days(streak), style: theme.textTheme.labelMedium),
               ],
             ),
           ],
@@ -171,7 +175,8 @@ class _FolderSection extends StatelessWidget {
   final VoidCallback onNewDeck;
 
   Future<void> _rename(BuildContext context) async {
-    final name = await showTextInput(context, title: 'Papka nomi', label: 'Nomi', initial: folder);
+    final t = S.of(context);
+    final name = await showTextInput(context, title: t.folderName, label: t.name, initial: folder);
     if (name == null || name.isEmpty || !context.mounted) return;
     await context.read<LibraryProvider>().renameFolder(folder, name);
   }
@@ -182,6 +187,7 @@ class _FolderSection extends StatelessWidget {
     final decks = lib.decksIn(folder);
     final counts = lib.countsOfFolder(folder);
     final theme = Theme.of(context);
+    final t = S.of(context);
     final isRoot = folder.isEmpty;
 
     final tiles = [for (final d in decks) _DeckTile(deck: d)];
@@ -192,7 +198,7 @@ class _FolderSection extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('Papkasiz', style: theme.textTheme.titleSmall),
+              child: Text(t.noFolder, style: theme.textTheme.titleSmall),
             ),
           ),
         ...tiles,
@@ -210,15 +216,15 @@ class _FolderSection extends StatelessWidget {
         collapsedShape: const Border(),
         leading: const Icon(Icons.folder_rounded),
         title: Text(folder, style: theme.textTheme.titleMedium),
-        subtitle: Text('${decks.length} ta to\'plam · ${counts.learned}/${counts.total} yodlangan'),
+        subtitle: Text(t.folderSubtitle(decks.length, counts.learned, counts.total)),
         trailing: PopupMenuButton<String>(
           onSelected: (v) {
             if (v == 'new') onNewDeck();
             if (v == 'rename') _rename(context);
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'new', child: Text('Bu papkaga to\'plam qo\'shish')),
-            PopupMenuItem(value: 'rename', child: Text('Papka nomini o\'zgartirish')),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'new', child: Text(t.addDeckToFolder)),
+            PopupMenuItem(value: 'rename', child: Text(t.renameFolder)),
           ],
         ),
         childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -234,18 +240,19 @@ class _DeckTile extends StatelessWidget {
 
   Future<void> _menu(BuildContext context, String action) async {
     final lib = context.read<LibraryProvider>();
+    final t = S.of(context);
     switch (action) {
       case 'edit':
         final res = await showDeckForm(context,
-            title: 'To\'plamni tahrirlash', name: deck.name, folder: deck.folder);
+            title: t.editDeck, name: deck.name, folder: deck.folder);
         if (res != null) await lib.updateDeck(deck, name: res.name, folder: res.folder);
       case 'export':
         await SyncActions.export(context, deck: deck);
       case 'delete':
         final ok = await confirm(context,
-            title: 'O\'chirilsinmi?',
-            message: '"${deck.name}" va undagi ${lib.countsOf(deck.id).total} ta so\'z o\'chiriladi.',
-            ok: 'O\'chirish',
+            title: t.deleteQ,
+            message: t.deleteDeckMsg(deck.name, lib.countsOf(deck.id).total),
+            ok: t.delete,
             danger: true);
         if (ok) await lib.deleteDeck(deck.id);
     }
@@ -255,6 +262,7 @@ class _DeckTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.watch<LibraryProvider>().countsOf(deck.id);
     final theme = Theme.of(context);
+    final t = S.of(context);
 
     return Card(
       elevation: 0,
@@ -277,7 +285,7 @@ class _DeckTile extends StatelessWidget {
                     BucketBar(counts: c),
                     const SizedBox(height: 6),
                     Text(
-                      '${c.learned} yodlangan · ${c.problem} muammoli · ${c.review} qaytarish',
+                      t.deckCounts(c.learned, c.problem, c.review),
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
@@ -285,10 +293,10 @@ class _DeckTile extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 onSelected: (v) => _menu(context, v),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Nomi / papkasi')),
-                  PopupMenuItem(value: 'export', child: Text('Eksport (JSON)')),
-                  PopupMenuItem(value: 'delete', child: Text('O\'chirish')),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
+                  PopupMenuItem(value: 'export', child: Text(t.exportJson)),
+                  PopupMenuItem(value: 'delete', child: Text(t.delete)),
                 ],
               ),
             ],
@@ -348,18 +356,16 @@ class _EmptyLibrary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final t = S.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
           Icon(Icons.style_outlined, size: 64, color: theme.colorScheme.onSurfaceVariant),
           const SizedBox(height: 16),
-          Text('Hali to\'plam yo\'q', style: theme.textTheme.titleLarge),
+          Text(t.noDecks, style: theme.textTheme.titleLarge),
           const SizedBox(height: 8),
-          const Text(
-            'Yangi to\'plam yarating yoki JSON faylni import qiling.',
-            textAlign: TextAlign.center,
-          ),
+          Text(t.noDecksHint, textAlign: TextAlign.center),
           const SizedBox(height: 24),
           Wrap(
             spacing: 12,
@@ -369,12 +375,12 @@ class _EmptyLibrary extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onNew,
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('Yangi to\'plam'),
+                label: Text(t.newDeck),
               ),
               OutlinedButton.icon(
                 onPressed: () => SyncActions.import(context),
                 icon: const Icon(Icons.download_rounded),
-                label: const Text('JSON import'),
+                label: Text(t.importJson),
               ),
             ],
           ),

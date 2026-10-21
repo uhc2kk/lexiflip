@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/deck.dart';
 import '../providers/library_provider.dart';
 import '../providers/stats_provider.dart';
@@ -14,12 +15,13 @@ void showSnack(BuildContext context, String msg) {
 /// Pops a small celebration for newly unlocked badges.
 void showAchievements(BuildContext context, List<Achievement> list) {
   if (list.isEmpty || !context.mounted) return;
-  final text = list.map((a) => '${a.emoji} ${a.title}').join('   ');
+  final t = S.of(context);
+  final text = list.map((a) => '${a.emoji} ${t.achievementTitle(a.id)}').join('   ');
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
       duration: const Duration(seconds: 4),
-      content: Text('Yangi yutuq!  $text'),
+      content: Text('${t.newAchievement}  $text'),
     ));
 }
 
@@ -27,16 +29,17 @@ Future<bool> confirm(
   BuildContext context, {
   required String title,
   required String message,
-  String ok = 'Ha',
+  String? ok,
   bool danger = false,
 }) async {
+  final t = S.of(context);
   final res = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Bekor qilish')),
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t.cancel)),
         FilledButton(
           style: danger
               ? FilledButton.styleFrom(
@@ -44,7 +47,7 @@ Future<bool> confirm(
                   foregroundColor: Theme.of(ctx).colorScheme.onError)
               : null,
           onPressed: () => Navigator.pop(ctx, true),
-          child: Text(ok),
+          child: Text(ok ?? t.yes),
         ),
       ],
     ),
@@ -65,9 +68,10 @@ Future<DeckFormResult?> showDeckForm(
   required String title,
   String name = '',
   String folder = '',
-  String okLabel = 'Saqlash',
+  String? okLabel,
   String? subtitle,
 }) {
+  final t = S.of(context);
   final folders = context.read<LibraryProvider>().namedFolders;
   final nameCtrl = TextEditingController(text: name);
   final folderCtrl = TextEditingController(text: folder);
@@ -98,22 +102,22 @@ Future<DeckFormResult?> showDeckForm(
                 TextFormField(
                   controller: nameCtrl,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'To\'plam nomi',
-                    hintText: 'Masalan: Mavzu 1',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: t.deckName,
+                    hintText: t.deckNameHint,
+                    border: const OutlineInputBorder(),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Nom kiriting' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty) ? t.enterName : null,
                   onFieldSubmitted: (_) => submit(),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: folderCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Papka (ixtiyoriy)',
-                    hintText: 'Masalan: Arabcha',
-                    prefixIcon: Icon(Icons.folder_outlined),
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: t.folderOptional,
+                    hintText: t.folderHint,
+                    prefixIcon: const Icon(Icons.folder_outlined),
+                    border: const OutlineInputBorder(),
                   ),
                   onFieldSubmitted: (_) => submit(),
                 ),
@@ -137,8 +141,8 @@ Future<DeckFormResult?> showDeckForm(
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Bekor qilish')),
-          FilledButton(onPressed: submit, child: Text(okLabel)),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t.cancel)),
+          FilledButton(onPressed: submit, child: Text(okLabel ?? t.save)),
         ],
       );
     },
@@ -151,6 +155,7 @@ Future<String?> showTextInput(
   required String label,
   String initial = '',
 }) {
+  final t = S.of(context);
   final ctrl = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
@@ -163,8 +168,8 @@ Future<String?> showTextInput(
         onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Bekor qilish')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Saqlash')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t.cancel)),
+        FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: Text(t.save)),
       ],
     ),
   );
