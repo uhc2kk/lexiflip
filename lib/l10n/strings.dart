@@ -1,5 +1,8 @@
 import 'package:flutter/widgets.dart';
 
+/// Word language shown in the 'missing voice' message.
+enum WordScriptName { arabic, russian, english }
+
 /// App interface languages.
 enum AppLang {
   uz('O\'zbekcha'),
@@ -342,6 +345,46 @@ class S {
           }[code],
       } ??
       code;
+
+  // ---------------- TTS ----------------
+  String missingVoiceTitle(String lang) => _t(
+      '$lang ovoz o\'rnatilmagan', '$lang voice not installed', 'Голос ($lang) не установлен');
+  String voiceLangName(WordScriptName s) => switch (s) {
+        WordScriptName.arabic => _t('Arabcha', 'Arabic', 'Арабский'),
+        WordScriptName.russian => _t('Ruscha', 'Russian', 'Русский'),
+        WordScriptName.english => _t('Inglizcha', 'English', 'Английский'),
+      };
+  String get missingVoiceWindows => _t(
+      'Windows\'da shu tildagi ovoz yo\'q.\n\n'
+          '1. Settings (Win + I) → Time & language → Speech\n'
+          '2. "Add voices" → tilni qidiring → Add\n'
+          '3. LexiFlip\'ni yopib, qayta oching.\n\n'
+          'Agar "Add voices" bo\'lmasa: Language & region → Add a language → '
+          'o\'rnatishda "Text-to-speech" belgilang.',
+      'Windows has no voice for this language.\n\n'
+          '1. Settings (Win + I) → Time & language → Speech\n'
+          '2. "Add voices" → search the language → Add\n'
+          '3. Close and reopen LexiFlip.\n\n'
+          'No "Add voices"? Language & region → Add a language → tick "Text-to-speech".',
+      'В Windows нет голоса для этого языка.\n\n'
+          '1. Параметры (Win + I) → Время и язык → Речь\n'
+          '2. «Добавить голоса» → найдите язык → Добавить\n'
+          '3. Закройте и снова откройте LexiFlip.\n\n'
+          'Нет «Добавить голоса»? Язык и регион → Добавить язык → отметьте «Преобразование текста в речь».');
+  String get missingVoiceAndroid => _t(
+      'Telefonda shu tildagi ovoz yo\'q.\n\n'
+          '1. Sozlamalar → "Matnni nutqqa aylantirish" (Text-to-speech) ni qidiring\n'
+          '2. Afzal tizim: Google\n'
+          '3. ⚙️ → Ovoz ma\'lumotlarini o\'rnatish → tilni yuklab oling.',
+      'Your phone has no voice for this language.\n\n'
+          '1. Settings → search "Text-to-speech"\n'
+          '2. Preferred engine: Google\n'
+          '3. ⚙️ → Install voice data → download the language.',
+      'На телефоне нет голоса для этого языка.\n\n'
+          '1. Настройки → найдите «Синтез речи»\n'
+          '2. Система по умолчанию: Google\n'
+          '3. ⚙️ → Установка голосовых данных → скачайте язык.');
+  String get ok => _t('Tushunarli', 'Got it', 'Понятно');
 
   /// Default name for the deck old cards are moved into.
   String get generalDeck => _t('Umumiy', 'General', 'Общее');

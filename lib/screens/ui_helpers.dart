@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import 'package:flutter/foundation.dart';
+
 import '../models/deck.dart';
+import '../services/tts_service.dart';
 import '../providers/library_provider.dart';
 import '../providers/stats_provider.dart';
 
@@ -171,6 +174,29 @@ Future<String?> showTextInput(
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t.cancel)),
         FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: Text(t.save)),
       ],
+    ),
+  );
+}
+
+/// Speaks [text]; if the device has no voice for its language, explains how
+/// to install one (unless [quiet], used for auto-pronounce).
+Future<void> speakWord(BuildContext context, String text, {bool quiet = false}) async {
+  final result = await context.read<TtsService>().speak(text);
+  if (result != SpeakResult.missingVoice || quiet || !context.mounted) return;
+  final t = S.of(context);
+  final name = t.voiceLangName(switch (detectScript(text)) {
+    WordScript.arabic => WordScriptName.arabic,
+    WordScript.cyrillic => WordScriptName.russian,
+    WordScript.latin => WordScriptName.english,
+  });
+  final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.record_voice_over_outlined),
+      title: Text(t.missingVoiceTitle(name)),
+      content: Text(android ? t.missingVoiceAndroid : t.missingVoiceWindows),
+      actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t.ok))],
     ),
   );
 }

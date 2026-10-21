@@ -7,6 +7,7 @@ import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../l10n/strings.dart';
 import '../providers/settings_provider.dart';
+import '../screens/ui_helpers.dart';
 import '../services/tts_service.dart';
 
 /// Shared rounded surface for both card faces.
@@ -101,7 +102,7 @@ class CardFront extends StatelessWidget {
           IconButton.filledTonal(
             tooltip: S.of(context).pronounce,
             iconSize: 28,
-            onPressed: () => context.read<TtsService>().speak(card.word),
+            onPressed: () => speakWord(context, card.word),
             icon: const Icon(Icons.volume_up_rounded),
           ),
         ],

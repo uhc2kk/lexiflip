@@ -233,7 +233,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                         IconButton(
                           tooltip: t.kPronounce,
                           icon: const Icon(Icons.volume_up_outlined),
-                          onPressed: () => context.read<TtsService>().speak(_word.text),
+                          onPressed: () => speakWord(context, _word.text),
                         ),
                         Padding(
                           padding: const EdgeInsets.only(right: 6),

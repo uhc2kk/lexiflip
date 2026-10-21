@@ -10,7 +10,6 @@ import '../models/flashcard.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
-import '../services/tts_service.dart';
 import '../widgets/card_faces.dart';
 import '../widgets/flip_card.dart';
 import 'card_editor_screen.dart';
@@ -102,7 +101,7 @@ class _StudyScreenState extends State<StudyScreen> {
     if (!mounted) return;
     final card = _current;
     if (card != null && context.read<SettingsProvider>().autoSpeak) {
-      context.read<TtsService>().speak(card.word);
+      speakWord(context, card.word, quiet: true);
     }
   }
 
@@ -165,7 +164,7 @@ class _StudyScreenState extends State<StudyScreen> {
 
   void _speak() {
     final c = _current;
-    if (c != null) context.read<TtsService>().speak(c.word);
+    if (c != null) speakWord(context, c.word);
   }
 
   void _browse(int dir) {

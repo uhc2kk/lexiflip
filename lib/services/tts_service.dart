@@ -18,14 +18,21 @@ WordScript detectScript(String text) {
   return WordScript.latin;
 }
 
+/// Result of a [TtsService.speak] call.
+enum SpeakResult { ok, missingVoice, unavailable }
 
 /// Thin wrapper around flutter_tts (Android, Web, Windows, macOS).
-/// Picks the voice language from the word's script (English / Arabic /
-/// Russian). On platforms without a TTS engine it fails silently.
+///
+/// Picks a voice that matches the word's script (English / Arabic /
+/// Russian). It looks through the installed voices for ANY voice of that
+/// language (ar-SA, ar-EG, …), so it works whichever variant is installed.
+/// If none is installed it returns [SpeakResult.missingVoice] instead of
+/// silently reading Arabic with an English voice.
 class TtsService {
   final FlutterTts _tts = FlutterTts();
   bool _ready = false;
-  String? _lang;
+  String? _lang; // language prefix currently set: 'en' | 'ar' | 'ru'
+  List<Map<String, String>>? _voices;
 
   Future<void> _init() async {
     if (_ready) return;
@@ -38,30 +45,91 @@ class TtsService {
     _ready = true;
   }
 
-  Future<void> _setLanguageFor(String text) async {
-    final lang = switch (detectScript(text)) {
-      WordScript.arabic => 'ar-SA',
-      WordScript.cyrillic => 'ru-RU',
-      WordScript.latin => 'en-US',
-    };
-    if (lang == _lang) return;
+  Future<List<Map<String, String>>> _installedVoices() async {
+    if (_voices != null) return _voices!;
     try {
-      await _tts.setLanguage(lang);
-      _lang = lang;
+      final raw = await _tts.getVoices;
+      _voices = [
+        if (raw is List)
+          for (final v in raw)
+            if (v is Map)
+              {
+                'name': (v['name'] ?? '').toString(),
+                'locale': (v['locale'] ?? '').toString(),
+              },
+      ];
     } catch (e) {
-      debugPrint('TTS language $lang unavailable: $e');
+      debugPrint('TTS getVoices failed: $e');
+      _voices = const [];
     }
+    return _voices!;
   }
 
-  Future<void> speak(String text) async {
-    if (text.trim().isEmpty) return;
+  static String _prefixFor(WordScript s) => switch (s) {
+        WordScript.arabic => 'ar',
+        WordScript.cyrillic => 'ru',
+        WordScript.latin => 'en',
+      };
+
+  static String _defaultLocale(String prefix) => switch (prefix) {
+        'ar' => 'ar-SA',
+        'ru' => 'ru-RU',
+        _ => 'en-US',
+      };
+
+  /// Chooses a voice for [prefix]. Returns false if the device has voices
+  /// but none in that language.
+  Future<bool> _useLanguage(String prefix) async {
+    if (_lang == prefix) return true;
+    final voices = await _installedVoices();
+    final matching = voices
+        .where((v) => v['locale']!.toLowerCase().replaceAll('_', '-').startsWith(prefix))
+        .toList();
+
+    if (voices.isNotEmpty && matching.isEmpty) return false;
+
+    try {
+      if (matching.isNotEmpty) {
+        // Prefer the common locale (ar-SA / en-US / ru-RU) if present.
+        final want = _defaultLocale(prefix).toLowerCase();
+        final pick = matching.firstWhere(
+          (v) => v['locale']!.toLowerCase().replaceAll('_', '-') == want,
+          orElse: () => matching.first,
+        );
+        await _tts.setVoice({'name': pick['name']!, 'locale': pick['locale']!});
+      } else {
+        // Voice list unknown on this platform → fall back to language code.
+        final r = await _tts.setLanguage(_defaultLocale(prefix));
+        if (r == 0) return false;
+      }
+    } catch (e) {
+      debugPrint('TTS voice for $prefix failed: $e');
+    }
+    _lang = prefix;
+    return true;
+  }
+
+  /// Forget cached voices (e.g. after the user installed a new voice).
+  void refreshVoices() {
+    _voices = null;
+    _lang = null;
+  }
+
+  Future<SpeakResult> speak(String text) async {
+    if (text.trim().isEmpty) return SpeakResult.ok;
     try {
       await _init();
-      await _setLanguageFor(text);
+      final prefix = _prefixFor(detectScript(text));
+      if (!await _useLanguage(prefix)) {
+        refreshVoices(); // check again next time — user may install it
+        return SpeakResult.missingVoice;
+      }
       await _tts.stop();
       await _tts.speak(text);
+      return SpeakResult.ok;
     } catch (e) {
       debugPrint('TTS unavailable on this platform: $e');
+      return SpeakResult.unavailable;
     }
   }
 }
