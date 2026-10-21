@@ -4,122 +4,194 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/deck.dart';
 import '../models/flashcard.dart';
 
+/// One deck read from an import file.
+/// [id] is null when the file didn't say which deck it belongs to (old
+/// single-deck files) — the UI then asks the user for a name & folder.
+class ImportedDeck {
+  ImportedDeck({this.id, required this.name, this.folder = '', required this.cards});
+  final String? id;
+  String name;
+  String folder;
+  final List<Flashcard> cards;
+}
+
 class MergeResult {
-  const MergeResult(this.toWrite, this.added, this.updated, this.skipped);
-  final List<Flashcard> toWrite;
-  final int added;
-  final int updated;
-  final int skipped;
+  MergeResult({this.added = 0, this.updated = 0, this.skipped = 0});
+  int added;
+  int updated;
+  int skipped;
+
+  void addAll(MergeResult o) {
+    added += o.added;
+    updated += o.updated;
+    skipped += o.skipped;
+  }
 
   @override
-  String toString() =>
-      '$added added · $updated updated · $skipped unchanged';
+  String toString() => '$added ta yangi · $updated ta yangilandi · $skipped ta o\'zgarmadi';
 }
 
 /// Offline sync between devices through a plain JSON file.
 ///
-/// File format:
+/// Format v2 (written by this version):
 /// {
 ///   "format": "lexiflip-deck",
-///   "version": 1,
-///   "exportedAt": "2026-10-21T12:00:00.000Z",
-///   "cards": [ { ...Flashcard.toJson() }, ... ]
+///   "version": 2,
+///   "exportedAt": "...",
+///   "decks": [
+///     { "id": "...", "name": "Mavzu 1", "folder": "Arabcha",
+///       "cards": [ { ...Flashcard.toJson() }, ... ] }
+///   ]
 /// }
-/// A bare JSON array of cards is also accepted on import.
+///
+/// Also accepted on import:
+///  - v1: { "deck": "Name", "folder": "...", "cards": [ ... ] }
+///  - a bare JSON array of cards
 class JsonSyncService {
   JsonSyncService._();
 
   static const format = 'lexiflip-deck';
-  static const version = 1;
+  static const version = 2;
 
-  // ---------- Encode / decode ----------
+  // ---------- Encode ----------
 
-  static String encode(List<Flashcard> cards) {
+  static String encode(Iterable<Deck> decks, Iterable<Flashcard> cards) {
+    final byDeck = <String, List<Flashcard>>{};
+    for (final c in cards) {
+      (byDeck[c.deckId] ??= []).add(c);
+    }
     return const JsonEncoder.withIndent('  ').convert({
       'format': format,
       'version': version,
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
-      'count': cards.length,
-      'cards': cards.map((c) => c.toJson()).toList(),
+      'decks': [
+        for (final d in decks)
+          {
+            ...d.toJson(),
+            'count': byDeck[d.id]?.length ?? 0,
+            'cards': [for (final c in byDeck[d.id] ?? const []) c.toJson()],
+          },
+      ],
     });
   }
 
-  static List<Flashcard> decode(String source) {
-    // Strip a UTF-8 BOM (files edited in Notepad often have one).
+  // ---------- Decode ----------
+
+  static List<Flashcard> _cards(List raw) => raw
+      .whereType<Map>()
+      .map((m) => Flashcard.fromJson(Map<String, dynamic>.from(m)))
+      .where((c) => c.word.isNotEmpty)
+      .toList();
+
+  static List<ImportedDeck> decode(String source, {String fallbackName = 'Import'}) {
     final cleaned = source.startsWith('﻿') ? source.substring(1) : source;
     final data = jsonDecode(cleaned);
 
-    final List raw;
     if (data is List) {
-      raw = data;
-    } else if (data is Map && data['cards'] is List) {
-      raw = data['cards'] as List;
-    } else {
-      throw const FormatException('This is not a LexiFlip deck file.');
+      return [ImportedDeck(name: fallbackName, cards: _cards(data))];
+    }
+    if (data is! Map) {
+      throw const FormatException('Bu LexiFlip fayli emas.');
     }
 
-    return raw
-        .whereType<Map>()
-        .map((m) => Flashcard.fromJson(Map<String, dynamic>.from(m)))
-        .where((c) => c.word.isNotEmpty)
-        .toList();
+    if (data['decks'] is List) {
+      return [
+        for (final d in (data['decks'] as List).whereType<Map>())
+          ImportedDeck(
+            id: (d['id'] ?? '').toString().isEmpty ? null : d['id'].toString(),
+            name: (d['name'] ?? fallbackName).toString().trim(),
+            folder: (d['folder'] ?? '').toString().trim(),
+            cards: _cards(d['cards'] is List ? d['cards'] as List : const []),
+          ),
+      ];
+    }
+
+    if (data['cards'] is List) {
+      final name = (data['deck'] ?? data['name'] ?? '').toString().trim();
+      return [
+        ImportedDeck(
+          id: (data['deckId'] ?? '').toString().isEmpty
+              ? null
+              : data['deckId'].toString(),
+          name: name.isEmpty ? fallbackName : name,
+          folder: (data['folder'] ?? '').toString().trim(),
+          cards: _cards(data['cards'] as List),
+        ),
+      ];
+    }
+    throw const FormatException('Bu LexiFlip fayli emas.');
   }
 
-  // ---------- Merge ----------
+  // ---------- Merge (within one deck) ----------
 
   static String _norm(String w) => w.trim().toLowerCase();
 
-  /// Matches incoming cards to existing ones by id, then by word
-  /// (case-insensitive). The card with the newer `updatedAt` wins.
-  /// Nothing local is ever deleted by a merge.
-  static MergeResult merge(
-    Iterable<Flashcard> existing,
+  /// Matches incoming cards to the deck's existing cards by id, then by word.
+  /// The card with the newer `updatedAt` wins. Nothing is ever deleted.
+  /// Returns the cards to write (already moved into [deckId]).
+  static (List<Flashcard>, MergeResult) merge(
+    String deckId,
+    Iterable<Flashcard> existingInDeck,
+    Iterable<Flashcard> allExisting,
     List<Flashcard> incoming,
   ) {
-    final byId = {for (final c in existing) c.id: c};
-    final byWord = {for (final c in existing) _norm(c.word): c};
+    final byId = {for (final c in existingInDeck) c.id: c};
+    final byWord = {for (final c in existingInDeck) _norm(c.word): c};
+    final takenIds = {for (final c in allExisting) c.id};
     final toWrite = <Flashcard>[];
-    var added = 0, updated = 0, skipped = 0;
+    final result = MergeResult();
 
-    for (final inc in incoming) {
+    for (final raw in incoming) {
+      final inc = raw.copyWith(deckId: deckId);
       final match = byId[inc.id] ?? byWord[_norm(inc.word)];
 
       if (match == null) {
-        toWrite.add(inc);
-        byId[inc.id] = inc;
-        byWord[_norm(inc.word)] = inc;
-        added++;
+        // Same id used by a card in another deck → give this one a new id.
+        final fresh = takenIds.contains(inc.id)
+            ? Flashcard.fromJson({...inc.toJson(), 'id': ''}, deckId: deckId)
+            : inc;
+        toWrite.add(fresh);
+        takenIds.add(fresh.id);
+        byId[fresh.id] = fresh;
+        byWord[_norm(fresh.word)] = fresh;
+        result.added++;
       } else if (inc.updatedAt.isAfter(match.updatedAt)) {
-        // Keep the local id so the same card isn't duplicated.
         final merged = inc.copyWith(id: match.id, createdAt: match.createdAt);
         toWrite.add(merged);
         byId[merged.id] = merged;
         byWord[_norm(merged.word)] = merged;
-        updated++;
+        result.updated++;
       } else {
-        skipped++;
+        result.skipped++;
       }
     }
-    return MergeResult(toWrite, added, updated, skipped);
+    return (toWrite, result);
   }
 
   // ---------- File I/O (cross-platform) ----------
 
-  /// Opens a save dialog (Android/Desktop) or triggers a download (Web).
-  /// Returns a path / filename, or null if the user cancelled.
-  static Future<String?> exportToFile(List<Flashcard> cards) async {
+  static String _stamp() {
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
-    final name = 'lexiflip_${now.year}${two(now.month)}${two(now.day)}_'
-        '${two(now.hour)}${two(now.minute)}.json';
-    final bytes = Uint8List.fromList(utf8.encode(encode(cards)));
+    return '${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}';
+  }
 
-    // file_picker writes the bytes itself on every platform:
-    // Android = "Save as" (SAF), Desktop = native dialog, Web = download.
+  static String safeFileName(String s) =>
+      s.replaceAll(RegExp(r'[^\w\-]+', unicode: true), '_').replaceAll(RegExp(r'_+'), '_');
+
+  /// Android = "Save as" (SAF), Desktop = native dialog, Web = download.
+  static Future<String?> exportToFile(
+    Iterable<Deck> decks,
+    Iterable<Flashcard> cards, {
+    String? baseName,
+  }) async {
+    final name = 'lexiflip_${safeFileName(baseName ?? 'hammasi')}_${_stamp()}.json';
+    final bytes = Uint8List.fromList(utf8.encode(encode(decks, cards)));
     final uri = await FilePicker.saveFile(
-      dialogTitle: 'Export LexiFlip deck',
+      dialogTitle: 'LexiFlip eksport',
       fileName: name,
       bytes: bytes,
       mimeType: 'application/json',
@@ -128,22 +200,17 @@ class JsonSyncService {
     return uri.isScheme('file') ? uri.toFilePath() : name;
   }
 
-  /// Lets the user pick a .json file and parses it.
-  /// Returns null if the user cancelled.
-  static Future<List<Flashcard>?> pickAndDecode() async {
-    // Android's picker often greys out .json with a custom filter,
-    // so allow any file there and validate the content instead.
-    final isAndroid =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-
+  /// Lets the user pick a .json file and parses it. Null if cancelled.
+  static Future<List<ImportedDeck>?> pickAndDecode() async {
+    final isAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     final file = await FilePicker.pickFile(
-      dialogTitle: 'Import LexiFlip deck',
+      dialogTitle: 'LexiFlip import',
       type: isAndroid ? FileType.any : FileType.custom,
       allowedExtensions: isAndroid ? null : const ['json'],
     );
     if (file == null) return null;
-
     final bytes = await file.readAsBytes();
-    return decode(utf8.decode(bytes, allowMalformed: true));
+    final base = file.name.replaceAll(RegExp(r'\.json$', caseSensitive: false), '');
+    return decode(utf8.decode(bytes, allowMalformed: true), fallbackName: base);
   }
 }

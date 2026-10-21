@@ -1,88 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../providers/deck_provider.dart';
+import '../models/deck.dart';
+import '../providers/library_provider.dart';
 import '../services/json_sync_service.dart';
+import 'ui_helpers.dart';
 
-/// UI glue for one-click JSON export / import (used from several screens).
+/// UI glue for JSON export / import.
 class SyncActions {
   SyncActions._();
 
-  static void _snack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  static Future<void> export(BuildContext context) async {
-    final deck = context.read<DeckProvider>();
-    if (deck.isEmpty) {
-      _snack(context, 'Nothing to export yet.');
+  /// Exports one deck, or every deck when [deck] is null.
+  static Future<void> export(BuildContext context, {Deck? deck}) async {
+    final lib = context.read<LibraryProvider>();
+    final decks = deck == null ? lib.decks : [deck];
+    final cards = deck == null ? lib.allCards : lib.cardsOf(deck.id);
+    if (cards.isEmpty) {
+      showSnack(context, 'Eksport qilish uchun so\'z yo\'q.');
       return;
     }
     try {
-      final saved = await JsonSyncService.exportToFile(deck.cards);
+      final saved = await JsonSyncService.exportToFile(
+        decks,
+        cards,
+        baseName: deck == null ? 'hammasi' : '${deck.folder}_${deck.name}',
+      );
       if (!context.mounted || saved == null) return;
-      _snack(context, 'Exported ${deck.length} cards → $saved');
+      showSnack(context, '${cards.length} ta so\'z saqlandi → $saved');
     } catch (e) {
-      if (context.mounted) _snack(context, 'Export failed: $e');
+      if (context.mounted) showSnack(context, 'Eksport xatosi: $e');
     }
   }
 
+  /// Picks a file and imports it. Each deck in the file goes into its own
+  /// deck (matched by id or folder + name); files without deck info ask
+  /// for a name and folder first.
   static Future<void> import(BuildContext context) async {
-    final deck = context.read<DeckProvider>();
+    final lib = context.read<LibraryProvider>();
     try {
       final incoming = await JsonSyncService.pickAndDecode();
       if (!context.mounted || incoming == null) return;
+      incoming.removeWhere((d) => d.cards.isEmpty);
       if (incoming.isEmpty) {
-        _snack(context, 'The file has no cards.');
+        showSnack(context, 'Faylda so\'z topilmadi.');
         return;
       }
 
-      // Empty deck: just merge. Otherwise ask merge vs replace.
-      var replace = false;
-      if (!deck.isEmpty) {
-        final choice = await showDialog<String>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Import ${incoming.length} cards'),
-            content: const Text(
-              'Merge keeps your cards and adds/updates from the file '
-              '(newest edit wins).\n\nReplace deletes your current deck first.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, 'replace'),
-                child: const Text('Replace'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, 'merge'),
-                child: const Text('Merge'),
-              ),
-            ],
-          ),
+      for (final d in incoming) {
+        // Files exported by LexiFlip carry deck id, name and folder → no
+        // questions. Old / hand-made files: ask where to put the words.
+        if (d.id != null) continue;
+        final res = await showDeckForm(
+          context,
+          title: 'Yangi to\'plam',
+          subtitle: '${d.cards.length} ta so\'z import qilinadi',
+          name: d.name,
+          folder: d.folder,
+          okLabel: 'Import',
         );
-        if (choice == null) return;
-        replace = choice == 'replace';
+        if (res == null || !context.mounted) return;
+        d.name = res.name;
+        d.folder = res.folder;
       }
 
-      if (replace) {
-        await deck.replaceAll(incoming);
-        if (context.mounted) {
-          _snack(context, 'Deck replaced with ${incoming.length} cards.');
-        }
-      } else {
-        final result = await deck.mergeImport(incoming);
-        if (context.mounted) _snack(context, 'Import done: $result');
-      }
+      final result = await lib.importDecks(incoming);
+      if (context.mounted) showSnack(context, 'Import tayyor: $result');
     } on FormatException catch (e) {
-      if (context.mounted) _snack(context, 'Invalid file: ${e.message}');
+      if (context.mounted) showSnack(context, 'Noto\'g\'ri fayl: ${e.message}');
     } catch (e) {
-      if (context.mounted) _snack(context, 'Import failed: $e');
+      if (context.mounted) showSnack(context, 'Import xatosi: $e');
     }
   }
 }

@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/flashcard.dart';
-import '../providers/deck_provider.dart';
+import '../providers/library_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/tts_service.dart';
 
 /// Shared rounded surface for both card faces.
@@ -61,6 +62,8 @@ class CardFront extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final showIpa =
+        context.select<SettingsProvider, bool>((s) => s.showPronunciation);
 
     return _CardSurface(
       label: scriptLabel(card.word),
@@ -78,7 +81,7 @@ class CardFront extends StatelessWidget {
               ),
             ),
           ),
-          if (card.ipa.isNotEmpty) ...[
+          if (showIpa && card.ipa.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
               card.ipa,
@@ -91,7 +94,7 @@ class CardFront extends StatelessWidget {
           ],
           const SizedBox(height: 20),
           IconButton.filledTonal(
-            tooltip: 'Pronounce (P)',
+            tooltip: 'Talaffuz (P)',
             iconSize: 28,
             onPressed: () => context.read<TtsService>().speak(card.word),
             icon: const Icon(Icons.volume_up_rounded),
@@ -114,9 +117,10 @@ class CardBack extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final settings = context.watch<SettingsProvider>();
 
     return _CardSurface(
-      label: 'MEANING',
+      label: 'TARJIMA',
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -131,7 +135,8 @@ class CardBack extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (card.secondaryTranslation.isNotEmpty) ...[
+              if (settings.showSecondary &&
+                  card.secondaryTranslation.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(
                   card.secondaryTranslation,
@@ -160,7 +165,7 @@ class CardBack extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 16),
-              MnemonicField(card: card),
+              if (settings.showMnemonic) MnemonicField(card: card),
             ],
           ),
         ),
@@ -183,13 +188,13 @@ class _MnemonicFieldState extends State<MnemonicField> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.card.mnemonic);
   late final FocusNode _focus = FocusNode(debugLabel: 'mnemonic');
-  late DeckProvider _deck;
+  late LibraryProvider _deck;
   Timer? _debounce;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _deck = context.read<DeckProvider>();
+    _deck = context.read<LibraryProvider>();
   }
 
   @override
@@ -248,7 +253,7 @@ class _MnemonicFieldState extends State<MnemonicField> {
       decoration: InputDecoration(
         isDense: true,
         prefixIcon: const Icon(Icons.lightbulb_outline_rounded, size: 20),
-        hintText: 'Mnemonic / keyword…',
+        hintText: 'Eslatma / kalit so\'z…',
         filled: true,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),

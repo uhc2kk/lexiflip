@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'providers/deck_provider.dart';
+import 'providers/library_provider.dart';
 import 'providers/settings_provider.dart';
-import 'screens/study_screen.dart';
+import 'providers/stats_provider.dart';
+import 'screens/home_screen.dart';
 import 'services/autofill_service.dart';
 import 'services/storage_service.dart';
 import 'services/tts_service.dart';
@@ -16,7 +17,8 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
-        ChangeNotifierProvider(create: (_) => DeckProvider()),
+        ChangeNotifierProvider(create: (_) => LibraryProvider()),
+        ChangeNotifierProvider(create: (_) => StatsProvider()),
         Provider(create: (_) => TtsService()),
         Provider(
           create: (_) => AutofillService(),
@@ -63,7 +65,7 @@ class LexiFlipApp extends StatelessWidget {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: mode,
-      home: const StudyScreen(),
+      home: const HomeScreen(),
     );
   }
 }

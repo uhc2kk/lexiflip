@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/flashcard.dart';
-import '../providers/deck_provider.dart';
+import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/autofill_service.dart';
 import '../services/tts_service.dart';
+import 'ui_helpers.dart';
 
 /// Add a new card (cardId == null) or edit an existing one.
 class CardEditorScreen extends StatefulWidget {
-  const CardEditorScreen({super.key, this.cardId});
+  const CardEditorScreen({super.key, required this.deckId, this.cardId});
+  final String deckId;
   final String? cardId;
 
   @override
@@ -26,6 +28,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   final _mnemonic = TextEditingController();
 
   Flashcard? _original;
+  late String _deckId = widget.deckId;
   bool _loading = false;
 
   bool get _isNew => _original == null;
@@ -34,15 +37,10 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   void initState() {
     super.initState();
     if (widget.cardId != null) {
-      final deck = context.read<DeckProvider>();
-      for (final c in deck.cards) {
-        if (c.id == widget.cardId) {
-          _original = c;
-          break;
-        }
-      }
+      _original = context.read<LibraryProvider>().cardById(widget.cardId!);
       final c = _original;
       if (c != null) {
+        _deckId = c.deckId;
         _word.text = c.word;
         _ipa.text = c.ipa;
         _primary.text = c.primaryTranslation;
@@ -61,21 +59,24 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     super.dispose();
   }
 
-  // ---------------- Auto-fill ----------------
+  // ---------------- Auto-fill (English words) ----------------
 
   Future<void> _autofill({bool onlyIfEmpty = false}) async {
     final word = _word.text.trim();
     if (word.isEmpty || _loading) return;
+    if (detectScript(word) != WordScript.latin) {
+      if (!onlyIfEmpty) {
+        showSnack(context, 'Avto-to\'ldirish faqat inglizcha so\'zlar uchun ishlaydi.');
+      }
+      return;
+    }
     if (onlyIfEmpty &&
-        (_ipa.text.isNotEmpty ||
-            _primary.text.isNotEmpty ||
-            _example.text.isNotEmpty)) {
+        (_ipa.text.isNotEmpty || _primary.text.isNotEmpty || _example.text.isNotEmpty)) {
       return;
     }
 
     final settings = context.read<SettingsProvider>();
     final service = context.read<AutofillService>();
-    final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _loading = true);
     try {
@@ -87,18 +88,15 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
         geminiModel: settings.geminiModel,
       );
       if (!mounted) return;
-      // Overwrite with fetched values; never touch the user's mnemonic.
       if (r.ipa != null) _ipa.text = r.ipa!;
       if (r.primary != null) _primary.text = r.primary!;
       if (r.secondary != null) _secondary.text = r.secondary!;
       if (r.example != null) _example.text = r.example!;
       if (!r.isComplete) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Partially filled — complete the empty fields.'),
-        ));
+        showSnack(context, 'Qisman to\'ldirildi — bo\'sh joylarni o\'zingiz yozing.');
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Auto-fill: $e')));
+      if (mounted) showSnack(context, 'Avto-to\'ldirish: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -108,30 +106,20 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final deck = context.read<DeckProvider>();
+    final lib = context.read<LibraryProvider>();
     final word = _word.text.trim();
 
-    if (deck.wordExists(word, exceptId: _original?.id)) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Duplicate word'),
-          content: Text('"$word" is already in your deck. Save anyway?'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Save')),
-          ],
-        ),
-      );
-      if (ok != true) return;
+    if (lib.wordExists(_deckId, word, exceptId: _original?.id)) {
+      final ok = await confirm(context,
+          title: 'Takroriy so\'z',
+          message: '"$word" bu to\'plamda allaqachon bor. Baribir saqlansinmi?',
+          ok: 'Saqlash');
+      if (!ok) return;
     }
 
     final card = _isNew
         ? Flashcard.create(
+            deckId: _deckId,
             word: word,
             ipa: _ipa.text,
             primaryTranslation: _primary.text,
@@ -141,6 +129,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
           )
         : _original!
             .copyWith(
+              deckId: _deckId,
               word: word,
               ipa: _ipa.text.trim(),
               primaryTranslation: _primary.text.trim(),
@@ -150,28 +139,27 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
             )
             .touched();
 
-    await deck.upsert(card);
-    if (mounted) Navigator.of(context).pop();
+    await lib.upsertCard(card);
+    if (!mounted) return;
+    if (_isNew) {
+      // Keep adding: clear the form for the next word.
+      showSnack(context, '"$word" qo\'shildi');
+      for (final c in [_word, _ipa, _primary, _secondary, _example, _mnemonic]) {
+        c.clear();
+      }
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _delete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete card?'),
-        content: Text('"${_original!.word}" will be removed.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    await context.read<DeckProvider>().delete(_original!.id);
+    final ok = await confirm(context,
+        title: 'O\'chirilsinmi?',
+        message: '"${_original!.word}" o\'chiriladi.',
+        ok: 'O\'chirish',
+        danger: true);
+    if (!ok || !mounted) return;
+    await context.read<LibraryProvider>().deleteCard(_original!.id);
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -179,10 +167,10 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lib = context.watch<LibraryProvider>();
     final settings = context.watch<SettingsProvider>();
 
-    InputDecoration deco(String label, {String? hint, IconData? icon}) =>
-        InputDecoration(
+    InputDecoration deco(String label, {String? hint, IconData? icon}) => InputDecoration(
           labelText: label,
           hintText: hint,
           prefixIcon: icon == null ? null : Icon(icon),
@@ -191,17 +179,17 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isNew ? 'New card' : 'Edit card'),
+        title: Text(_isNew ? 'Yangi so\'z' : 'Tahrirlash'),
         actions: [
           if (!_isNew)
             IconButton(
-              tooltip: 'Delete',
+              tooltip: 'O\'chirish',
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: _delete,
             ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: FilledButton(onPressed: _save, child: const Text('Save')),
+            child: FilledButton(onPressed: _save, child: const Text('Saqlash')),
           ),
         ],
       ),
@@ -213,25 +201,36 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                // Word + Auto-fill
+                DropdownMenu<String>(
+                  initialSelection: _deckId,
+                  expandedInsets: EdgeInsets.zero,
+                  label: const Text('To\'plam'),
+                  leadingIcon: const Icon(Icons.folder_outlined),
+                  onSelected: (v) {
+                    if (v != null) setState(() => _deckId = v);
+                  },
+                  dropdownMenuEntries: [
+                    for (final d in lib.decks)
+                      DropdownMenuEntry(value: d.id, label: deckTitle(d)),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _word,
                   autofocus: _isNew,
+                  style: const TextStyle(fontSize: 20),
                   textInputAction: TextInputAction.search,
                   onFieldSubmitted: (_) => _autofill(onlyIfEmpty: true),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Enter a word' : null,
-                  decoration: deco('English word', icon: Icons.translate_rounded)
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'So\'z kiriting' : null,
+                  decoration: deco('So\'z (inglizcha / arabcha …)', icon: Icons.translate_rounded)
                       .copyWith(
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          tooltip: 'Pronounce',
+                          tooltip: 'Talaffuz',
                           icon: const Icon(Icons.volume_up_outlined),
-                          onPressed: () => context
-                              .read<TtsService>()
-                              .speak(_word.text),
+                          onPressed: () => context.read<TtsService>().speak(_word.text),
                         ),
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
@@ -241,12 +240,11 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                                   child: SizedBox(
                                     width: 20,
                                     height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
+                                    child: CircularProgressIndicator(strokeWidth: 2),
                                   ),
                                 )
                               : IconButton.filledTonal(
-                                  tooltip: 'Auto-fill',
+                                  tooltip: 'Avto-to\'ldirish',
                                   icon: const Icon(Icons.auto_awesome_rounded),
                                   onPressed: () => _autofill(),
                                 ),
@@ -259,43 +257,40 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                   padding: const EdgeInsets.fromLTRB(4, 6, 4, 18),
                   child: Text(
                     settings.hasGemini
-                        ? 'Auto-fill: Gemini → ${settings.targetLangName}'
-                        : 'Auto-fill: Free Dictionary + MyMemory → ${settings.targetLangName}',
+                        ? 'Avto-to\'ldirish: Gemini → ${settings.targetLangNameUz}'
+                        : 'Avto-to\'ldirish (inglizcha): Free Dictionary + MyMemory → ${settings.targetLangNameUz}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
                 TextFormField(
                   controller: _ipa,
-                  decoration: deco('IPA pronunciation',
-                      hint: '/rɪˈzɪliənt/', icon: Icons.record_voice_over_outlined),
+                  decoration: deco('O\'qilishi / IPA',
+                      hint: '/rɪˈzɪliənt/  yoki  bismi', icon: Icons.record_voice_over_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _primary,
-                  decoration: deco('Primary translation',
-                      icon: Icons.looks_one_outlined),
+                  decoration: deco('Asosiy tarjima', icon: Icons.looks_one_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _secondary,
-                  decoration: deco('Secondary translation / context synonym',
-                      icon: Icons.looks_two_outlined),
+                  decoration: deco('Ikkinchi tarjima / sinonim', icon: Icons.looks_two_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _example,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: deco('Example sentence',
-                      icon: Icons.format_quote_rounded),
+                  decoration: deco('Misol gap', icon: Icons.format_quote_rounded),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _mnemonic,
                   minLines: 1,
                   maxLines: 3,
-                  decoration: deco('Mnemonic / keyword',
-                      hint: 'Your own memory hook',
+                  decoration: deco('Eslatma / kalit so\'z',
+                      hint: 'O\'zingizning eslab qolish usulingiz',
                       icon: Icons.lightbulb_outline_rounded),
                 ),
               ],
