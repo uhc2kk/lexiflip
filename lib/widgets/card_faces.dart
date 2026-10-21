@@ -63,7 +63,7 @@ class CardFront extends StatelessWidget {
     final scheme = theme.colorScheme;
 
     return _CardSurface(
-      label: 'ENGLISH',
+      label: scriptLabel(card.word),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
