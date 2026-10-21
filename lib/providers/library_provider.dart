@@ -3,10 +3,11 @@ import 'package:hive_ce/hive.dart';
 
 import '../models/deck.dart';
 import '../models/flashcard.dart';
+import '../models/folder.dart';
 import '../services/json_sync_service.dart';
 import '../services/storage_service.dart';
 
-/// Bucket counts for one deck (or all decks).
+/// Bucket counts for a set of cards.
 class DeckCounts {
   const DeckCounts({this.review = 0, this.problem = 0, this.learned = 0});
   final int review;
@@ -16,7 +17,38 @@ class DeckCounts {
   double get learnedRatio => total == 0 ? 0 : learned / total;
 }
 
-/// All decks, folders and cards + every write to the database.
+/// What a study hub / session works on.
+enum SourceKind { deck, folder, starred, multi }
+
+class CardSource {
+  const CardSource.deck(this.id)
+      : kind = SourceKind.deck,
+        deckIds = const [];
+  const CardSource.folder(this.id)
+      : kind = SourceKind.folder,
+        deckIds = const [];
+  const CardSource.starred()
+      : kind = SourceKind.starred,
+        id = '',
+        deckIds = const [];
+  const CardSource.multi(this.deckIds)
+      : kind = SourceKind.multi,
+        id = '';
+
+  final SourceKind kind;
+  final String id;
+  final List<String> deckIds;
+
+  /// Stable key used for records ("best score in this set").
+  String get key => switch (kind) {
+        SourceKind.deck => id,
+        SourceKind.folder => 'folder:$id',
+        SourceKind.starred => 'starred',
+        SourceKind.multi => 'multi:${([...deckIds]..sort()).join(',')}',
+      };
+}
+
+/// Folders, decks and cards + every write to the database.
 class LibraryProvider extends ChangeNotifier {
   LibraryProvider() {
     _reload();
@@ -24,26 +56,31 @@ class LibraryProvider extends ChangeNotifier {
 
   final Box<Flashcard> _cardBox = StorageService.cards;
   final Box<Deck> _deckBox = StorageService.decks;
+  final Box<Folder> _folderBox = StorageService.folders;
 
+  List<Folder> _folders = [];
   List<Deck> _decks = [];
   List<Flashcard> _cards = [];
 
+  List<Folder> get folders => List.unmodifiable(_folders);
   List<Deck> get decks => List.unmodifiable(_decks);
   List<Flashcard> get allCards => List.unmodifiable(_cards);
-  bool get isEmpty => _decks.isEmpty;
+  bool get isEmpty => _decks.isEmpty && _folders.isEmpty;
 
   void _reload() {
-    _decks = _deckBox.values.toList()
-      ..sort((a, b) {
-        final f = a.folder.toLowerCase().compareTo(b.folder.toLowerCase());
-        return f != 0 ? f : _naturalCompare(a.name, b.name);
-      });
-    _cards = _cardBox.values.toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    _folders = _folderBox.values.toList()..sort(_byOrderThenName((f) => f.order, (f) => f.name));
+    _decks = _deckBox.values.toList()..sort(_byOrderThenName((d) => d.order, (d) => d.name));
+    _cards = _cardBox.values.toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
   }
 
+  static int Function(T, T) _byOrderThenName<T>(int Function(T) order, String Function(T) name) =>
+      (a, b) {
+        final o = order(a).compareTo(order(b));
+        return o != 0 ? o : naturalCompare(name(a), name(b));
+      };
+
   /// "Mavzu 2" < "Mavzu 10".
-  static int _naturalCompare(String a, String b) {
+  static int naturalCompare(String a, String b) {
     final re = RegExp(r'(\d+)|(\D+)');
     final pa = re.allMatches(a.toLowerCase()).map((m) => m[0]!).toList();
     final pb = re.allMatches(b.toLowerCase()).map((m) => m[0]!).toList();
@@ -55,7 +92,15 @@ class LibraryProvider extends ChangeNotifier {
     return pa.length.compareTo(pb.length);
   }
 
-  // ---------------- Queries ----------------
+  // ---------------- Lookups ----------------
+
+  Folder? folderById(String? id) {
+    if (id == null) return null;
+    for (final f in _folders) {
+      if (f.id == id) return f;
+    }
+    return null;
+  }
 
   Deck? deckById(String id) {
     for (final d in _decks) {
@@ -71,29 +116,61 @@ class LibraryProvider extends ChangeNotifier {
     return null;
   }
 
-  /// Folder names in display order; '' (no folder) comes last.
-  List<String> get folders {
-    final set = _decks.map((d) => d.folder).toSet().toList()
-      ..sort((a, b) {
-        if (a.isEmpty) return 1;
-        if (b.isEmpty) return -1;
-        return a.toLowerCase().compareTo(b.toLowerCase());
-      });
-    return set;
+  /// Folders directly inside [parentId] (null = top level).
+  List<Folder> subfolders(String? parentId) =>
+      _folders.where((f) => f.parentId == parentId).toList();
+
+  /// Decks directly inside [folderId] (null = top level).
+  List<Deck> decksIn(String? folderId) =>
+      _decks.where((d) => d.folderId == folderId).toList();
+
+  /// Folder ids of [folderId] and all its sub-folders.
+  Set<String> _folderTree(String folderId) =>
+      {folderId, ...subfolders(folderId).map((f) => f.id)};
+
+  /// Every deck inside the folder, including its sub-folders.
+  List<Deck> decksInTree(String folderId) {
+    final ids = _folderTree(folderId);
+    return _decks.where((d) => d.folderId != null && ids.contains(d.folderId)).toList();
   }
 
-  List<String> get namedFolders => folders.where((f) => f.isNotEmpty).toList();
+  /// "Arabcha › Kitob 1"
+  List<String> folderPathNames(String? folderId) {
+    final f = folderById(folderId);
+    if (f == null) return const [];
+    final parent = folderById(f.parentId);
+    return [if (parent != null) parent.name, f.name];
+  }
 
-  List<Deck> decksIn(String folder) =>
-      _decks.where((d) => d.folder == folder).toList();
+  List<String> deckFolderPath(Deck d) => folderPathNames(d.folderId);
 
-  List<Flashcard> cardsOf(String deckId) =>
-      _cards.where((c) => c.deckId == deckId).toList();
+  String deckTitle(Deck d) => [...deckFolderPath(d), d.name].join(' › ');
 
-  List<Flashcard> cardsOfStatus(String deckId, CardStatus status) =>
-      _cards.where((c) => c.deckId == deckId && c.status == status).toList();
+  /// All folders in display order: each root followed by its sub-folders.
+  List<Folder> get foldersFlat => [
+        for (final root in subfolders(null)) ...[root, ...subfolders(root.id)],
+      ];
 
-  DeckCounts _count(Iterable<Flashcard> cards) {
+  // ---------------- Cards for a source ----------------
+
+  List<Flashcard> cardsOf(String deckId) => _cards.where((c) => c.deckId == deckId).toList();
+
+  List<Flashcard> cardsFor(CardSource s) {
+    switch (s.kind) {
+      case SourceKind.deck:
+        return cardsOf(s.id);
+      case SourceKind.folder:
+        final ids = decksInTree(s.id).map((d) => d.id).toSet();
+        return _cards.where((c) => ids.contains(c.deckId)).toList();
+      case SourceKind.starred:
+        return _cards.where((c) => c.starred).toList();
+      case SourceKind.multi:
+        final ids = s.deckIds.toSet();
+        return _cards.where((c) => ids.contains(c.deckId)).toList();
+    }
+  }
+
+  DeckCounts count(Iterable<Flashcard> cards) {
     var r = 0, p = 0, l = 0;
     for (final c in cards) {
       switch (c.status) {
@@ -108,17 +185,12 @@ class LibraryProvider extends ChangeNotifier {
     return DeckCounts(review: r, problem: p, learned: l);
   }
 
-  DeckCounts countsOf(String deckId) =>
-      _count(_cards.where((c) => c.deckId == deckId));
+  DeckCounts countsOf(String deckId) => count(_cards.where((c) => c.deckId == deckId));
+  DeckCounts countsFor(CardSource s) => count(cardsFor(s));
+  DeckCounts countsOfFolder(String folderId) => countsFor(CardSource.folder(folderId));
+  DeckCounts get totalCounts => count(_cards);
+  int get starredCount => _cards.where((c) => c.starred).length;
 
-  DeckCounts countsOfFolder(String folder) {
-    final ids = decksIn(folder).map((d) => d.id).toSet();
-    return _count(_cards.where((c) => ids.contains(c.deckId)));
-  }
-
-  DeckCounts get totalCounts => _count(_cards);
-
-  /// Number of decks that are 100% learned (and non-empty).
   int get masteredDecks => _decks.where((d) {
         final c = countsOf(d.id);
         return c.total > 0 && c.learned == c.total;
@@ -126,31 +198,107 @@ class LibraryProvider extends ChangeNotifier {
 
   bool wordExists(String deckId, String word, {String? exceptId}) {
     final w = word.trim().toLowerCase();
-    return _cards.any((c) =>
-        c.deckId == deckId && c.id != exceptId && c.word.toLowerCase() == w);
+    return _cards.any((c) => c.deckId == deckId && c.id != exceptId && c.word.toLowerCase() == w);
+  }
+
+  // ---------------- Folders ----------------
+
+  int _nextFolderOrder(String? parentId) =>
+      subfolders(parentId).fold(-1, (m, f) => f.order > m ? f.order : m) + 1;
+
+  int _nextDeckOrder(String? folderId) =>
+      decksIn(folderId).fold(-1, (m, d) => d.order > m ? d.order : m) + 1;
+
+  Future<Folder> createFolder(String name, {String? parentId}) async {
+    // Only 2 levels: a sub-folder's parent must be a root folder.
+    final parent = folderById(parentId);
+    final pid = parent == null ? null : (parent.isRoot ? parent.id : parent.parentId);
+    final f = Folder.create(name: name, parentId: pid, order: _nextFolderOrder(pid));
+    await _folderBox.put(f.id, f);
+    _reload();
+    notifyListeners();
+    return f;
+  }
+
+  Future<void> renameFolder(Folder f, String name) async {
+    await _folderBox.put(f.id, f.copyWith(name: name.trim()));
+    _reload();
+    notifyListeners();
+  }
+
+  /// Moves a folder under [newParentId] (null = top level). A folder that
+  /// has sub-folders can only stay at the top level (2-level limit).
+  Future<bool> moveFolder(Folder f, String? newParentId) async {
+    if (newParentId == f.id) return false;
+    if (newParentId != null) {
+      final p = folderById(newParentId);
+      if (p == null || !p.isRoot || subfolders(f.id).isNotEmpty) return false;
+    }
+    final moved = newParentId == null
+        ? f.copyWith(clearParent: true, order: _nextFolderOrder(null))
+        : f.copyWith(parentId: newParentId, order: _nextFolderOrder(newParentId));
+    await _folderBox.put(f.id, moved);
+    _reload();
+    notifyListeners();
+    return true;
+  }
+
+  /// Deletes the folder, its sub-folders, decks and cards.
+  Future<void> deleteFolder(String folderId) async {
+    final tree = _folderTree(folderId);
+    final deckIds = decksInTree(folderId).map((d) => d.id).toSet();
+    await _cardBox.deleteAll(_cards.where((c) => deckIds.contains(c.deckId)).map((c) => c.id));
+    await _deckBox.deleteAll(deckIds);
+    await _folderBox.deleteAll(tree);
+    _reload();
+    notifyListeners();
+  }
+
+  /// Saves a new drag-and-drop order.
+  Future<void> reorderFolders(List<Folder> ordered) async {
+    await _folderBox.putAll({
+      for (var i = 0; i < ordered.length; i++) ordered[i].id: ordered[i].copyWith(order: i),
+    });
+    _reload();
+    notifyListeners();
+  }
+
+  Future<void> reorderDecks(List<Deck> ordered) async {
+    await _deckBox.putAll({
+      for (var i = 0; i < ordered.length; i++) ordered[i].id: ordered[i].copyWith(order: i),
+    });
+    _reload();
+    notifyListeners();
+  }
+
+  /// Finds (or creates) the folder for a path like ["Arabcha", "Kitob 1"].
+  Future<String?> ensureFolderPath(List<String> path) async {
+    String? parentId;
+    for (final name in path.take(2)) {
+      final existing = subfolders(parentId)
+          .where((f) => f.name.toLowerCase() == name.toLowerCase())
+          .firstOrNull;
+      parentId = existing?.id ?? (await createFolder(name, parentId: parentId)).id;
+    }
+    return parentId;
   }
 
   // ---------------- Decks ----------------
 
-  Future<Deck> createDeck(String name, {String folder = ''}) async {
-    final deck = Deck.create(name: name, folder: folder);
+  Future<Deck> createDeck(String name, {String? folderId}) async {
+    final deck = Deck.create(name: name, folderId: folderId, order: _nextDeckOrder(folderId));
     await _deckBox.put(deck.id, deck);
     _reload();
     notifyListeners();
     return deck;
   }
 
-  Future<void> updateDeck(Deck deck, {String? name, String? folder}) async {
-    await _deckBox.put(deck.id, deck.copyWith(name: name, folder: folder));
-    _reload();
-    notifyListeners();
-  }
-
-  Future<void> renameFolder(String from, String to) async {
-    final updates = {
-      for (final d in decksIn(from)) d.id: d.copyWith(folder: to.trim()),
-    };
-    await _deckBox.putAll(updates);
+  Future<void> updateDeck(Deck deck, {required String name, required String? folderId}) async {
+    final moved = folderId != deck.folderId;
+    final updated = folderId == null
+        ? deck.copyWith(name: name, clearFolder: true, order: moved ? _nextDeckOrder(null) : null)
+        : deck.copyWith(name: name, folderId: folderId, order: moved ? _nextDeckOrder(folderId) : null);
+    await _deckBox.put(deck.id, updated);
     _reload();
     notifyListeners();
   }
@@ -162,11 +310,9 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Puts every card of the deck back into "Qaytarilishi kerak".
-  Future<void> resetProgress(String deckId) async {
+  Future<void> resetProgress(CardSource s) async {
     await _cardBox.putAll({
-      for (final c in cardsOf(deckId))
-        c.id: c.copyWith(status: CardStatus.review).touched(),
+      for (final c in cardsFor(s)) c.id: c.copyWith(status: CardStatus.review).touched(),
     });
     _reload();
     notifyListeners();
@@ -203,48 +349,60 @@ class LibraryProvider extends ChangeNotifier {
     await upsertCard(card.copyWith(status: status).touched());
   }
 
+  Future<void> toggleStar(String id) async {
+    final card = cardById(id);
+    if (card == null) return;
+    await upsertCard(card.copyWith(starred: !card.starred).touched());
+  }
+
   /// Bilaman → Yodlangan, Bilmayman → Muammoli.
-  Future<Flashcard?> answer(String id, {required bool known}) async {
+  /// Returns the card's status BEFORE the answer (null if not found).
+  Future<CardStatus?> answer(String id, {required bool known}) async {
     final card = cardById(id);
     if (card == null) return null;
     final now = DateTime.now().toUtc();
-    final updated = card.copyWith(
+    await upsertCard(card.copyWith(
       status: known ? CardStatus.learned : CardStatus.problem,
       correct: card.correct + (known ? 1 : 0),
       wrong: card.wrong + (known ? 0 : 1),
       lastReviewedAt: now,
       updatedAt: now,
-    );
-    await upsertCard(updated);
-    return updated;
+    ));
+    return card.status;
   }
 
   // ---------------- Import ----------------
 
-  /// Imports decks: a deck with the same id, or the same folder + name, is
-  /// merged into; otherwise a new deck is created.
+  /// A deck with the same id, or the same folder + name, is merged into;
+  /// otherwise a new deck is created (folders from the file are created too).
   Future<MergeResult> importDecks(List<ImportedDeck> incoming) async {
     final total = MergeResult();
     for (final imp in incoming) {
+      final String? folderId = imp.targetRoot
+          ? null
+          : imp.targetFolderId ?? await ensureFolderPath(imp.folderPath);
+
       Deck? target = imp.id == null ? null : deckById(imp.id!);
       target ??= _decks
-          .where((d) =>
-              d.name.toLowerCase() == imp.name.toLowerCase() &&
-              d.folder.toLowerCase() == imp.folder.toLowerCase())
+          .where((d) => d.folderId == folderId && d.name.toLowerCase() == imp.name.toLowerCase())
           .firstOrNull;
       if (target == null) {
         final now = DateTime.now().toUtc();
         target = imp.id != null
-            ? Deck(id: imp.id!, name: imp.name, folder: imp.folder, createdAt: now, updatedAt: now)
-            : Deck.create(name: imp.name, folder: imp.folder);
+            ? Deck(
+                id: imp.id!,
+                name: imp.name,
+                folderId: folderId,
+                order: _nextDeckOrder(folderId),
+                createdAt: now,
+                updatedAt: now,
+              )
+            : Deck.create(name: imp.name, folderId: folderId, order: _nextDeckOrder(folderId));
         await _deckBox.put(target.id, target);
+        _reload();
       }
-      final (toWrite, result) = JsonSyncService.merge(
-        target.id,
-        cardsOf(target.id),
-        _cards,
-        imp.cards,
-      );
+      final (toWrite, result) =
+          JsonSyncService.merge(target.id, cardsOf(target.id), _cards, imp.cards);
       await _cardBox.putAll({for (final c in toWrite) c.id: c});
       _reload();
       total.addAll(result);

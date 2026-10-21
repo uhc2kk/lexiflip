@@ -214,7 +214,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                   },
                   dropdownMenuEntries: [
                     for (final d in lib.decks)
-                      DropdownMenuEntry(value: d.id, label: deckTitle(d)),
+                      DropdownMenuEntry(value: d.id, label: lib.deckTitle(d)),
                   ],
                 ),
                 const SizedBox(height: 16),

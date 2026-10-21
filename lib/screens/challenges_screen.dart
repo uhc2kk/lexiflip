@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import '../models/gamification.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
-import 'home_screen.dart' show DailyGoalCard;
-import 'ui_helpers.dart';
+import 'home_screen.dart' show QuestRow;
 
-/// Daily goal, last 7 days, speed-round records and achievements.
+/// Level, quests, last 7 days, records and tiered achievements.
 class ChallengesScreen extends StatelessWidget {
   const ChallengesScreen({super.key});
 
@@ -17,72 +17,209 @@ class ChallengesScreen extends StatelessWidget {
     final stats = context.watch<StatsProvider>();
     final lib = context.watch<LibraryProvider>();
     final goal = context.select<SettingsProvider, int>((s) => s.dailyGoal);
-    final theme = Theme.of(context);
     final t = S.of(context);
+    final theme = Theme.of(context);
     final total = lib.totalCounts;
 
-    Widget header(String t) => Padding(
+    Widget header(String text) => Padding(
           padding: const EdgeInsets.fromLTRB(4, 24, 4, 10),
-          child: Text(t, style: theme.textTheme.titleMedium),
+          child: Text(text, style: theme.textTheme.titleMedium),
         );
 
-    final records = [
-      for (final d in lib.decks)
-        if (stats.bestBlitz(d.id) > 0) (deckTitle(d), stats.bestBlitz(d.id)),
-    ]..sort((a, b) => b.$2.compareTo(a.$2));
+    String sourceName(String key) {
+      if (key == 'starred') return '⭐ ${t.starred}';
+      if (key.startsWith('multi:')) return t.selectedDecks(key.substring(6).split(',').length);
+      if (key.startsWith('folder:')) return '📁 ${lib.folderById(key.substring(7))?.name ?? '—'}';
+      final d = lib.deckById(key);
+      return d == null ? '—' : lib.deckTitle(d);
+    }
+
+    List<(String, int)> records(String prefix) {
+      final list = [
+        for (final e in stats.allBests.entries)
+          if (e.key.startsWith(prefix)) (sourceName(e.key.substring(prefix.length)), e.value),
+      ]..sort((a, b) => b.$2.compareTo(a.$2));
+      return list.take(5).toList();
+    }
+
+    Widget recordList(String emoji, String title, String prefix) {
+      final list = records(prefix);
+      return Card(
+        elevation: 0,
+        color: theme.colorScheme.surfaceContainerLow,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('$emoji $title', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            if (list.isEmpty)
+              Text(t.noRecords, style: theme.textTheme.bodySmall)
+            else
+              for (final (i, r) in list.indexed)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(children: [
+                    SizedBox(width: 28, child: Text(['🥇', '🥈', '🥉'].elementAtOrNull(i) ?? '${i + 1}.')),
+                    Expanded(child: Text(r.$1, overflow: TextOverflow.ellipsis)),
+                    Text('${r.$2}', style: theme.textTheme.titleSmall),
+                  ]),
+                ),
+          ]),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(t.challengesTitle)),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              const DailyGoalCard(),
+              _LevelCard(stats: stats),
+              header('📋 ${t.dailyQuests}'),
+              for (final q in stats.dailyQuests) QuestRow(quest: q, weekly: false),
+              header('🗓️ ${t.weeklyQuests}'),
+              for (final q in stats.weeklyQuests) QuestRow(quest: q, weekly: true),
               header(t.last7Days),
               _WeekChart(stats: stats, goal: goal),
               header(t.overall),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _StatChip('📚', '${total.learned}', t.statLearned),
-                  _StatChip('🔴', '${total.problem}', t.statProblem),
-                  _StatChip('🗂️', '${total.total}', t.statTotal),
-                  _StatChip('✍️', '${stats.totalAnswers}', t.statAnswers),
-                  _StatChip('⚔️', '${stats.battleWins}', t.statBattles),
-                ],
-              ),
-              header(t.blitzRecords),
-              if (records.isEmpty)
-                Text(t.noRecords)
-              else
-                for (final (i, r) in records.take(10).indexed)
-                  ListTile(
-                    dense: true,
-                    leading: Text(['🥇', '🥈', '🥉'].elementAtOrNull(i) ?? '  ${i + 1}.',
-                        style: const TextStyle(fontSize: 20)),
-                    title: Text(r.$1),
-                    trailing: Text(t.wordsCount(r.$2), style: theme.textTheme.titleMedium),
-                  ),
-              header(t.achievementsTitle(stats.unlockedCount, kAchievements.length)),
-              GridView.count(
-                crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 0.85,
-                children: [
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                _StatChip('✨', '${stats.xp}', 'XP'),
+                _StatChip('🔥', '${stats.streak(goal)}', t.statStreak),
+                _StatChip('📚', '${total.learned}', t.statLearned),
+                _StatChip('🔴', '${total.problem}', t.statProblem),
+                _StatChip('🗂️', '${total.total}', t.statTotal),
+                _StatChip('✍️', '${stats.totalAnswers}', t.statAnswers),
+                _StatChip('⚔️', '${stats.battleWins}', t.statBattles),
+                _StatChip('🐉', '${stats.bossWins}', t.statBosses),
+                _StatChip('📋', '${stats.questsDone}', t.statQuests),
+              ]),
+              header(t.records),
+              recordList('⏱️', t.blitzTitle, 'blitz60:'),
+              recordList('⚡', t.lightningTitle, 'blitz30:'),
+              recordList('🎯', t.perfectTitle, 'perfect:'),
+              header(t.achievementsTitle(
+                kAchievements.fold(0, (s, a) => s + stats.tierOf(a.metric)),
+                kAchievements.length * 5,
+              )),
+              LayoutBuilder(builder: (context, c) {
+                final cols = c.maxWidth > 600 ? 3 : 2;
+                final w = (c.maxWidth - 8 * (cols - 1)) / cols;
+                return Wrap(spacing: 8, runSpacing: 8, children: [
                   for (final a in kAchievements)
-                    _Badge(achievement: a, unlocked: stats.isUnlocked(a.id)),
-                ],
-              ),
+                    SizedBox(
+                      width: w,
+                      child: _AchievementTile(
+                        achievement: a,
+                        value: stats.metricValue(a.metric, goal: goal, lib: lib),
+                      ),
+                    ),
+                ]);
+              }),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LevelCard extends StatelessWidget {
+  const _LevelCard({required this.stats});
+  final StatsProvider stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = S.of(context);
+    final theme = Theme.of(context);
+    final level = stats.level;
+    final rank = rankFor(level);
+    final next = nextRank(level);
+    final from = xpForLevel(level), to = xpForLevel(level + 1);
+    final frac = ((stats.xp - from) / (to - from)).clamp(0.0, 1.0);
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(rank.emoji, style: const TextStyle(fontSize: 52)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(t.levelN(level), style: theme.textTheme.headlineSmall),
+                Text(t.rankName(rank.id), style: theme.textTheme.titleMedium),
+              ]),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(value: frac, minHeight: 10),
+          ),
+          const SizedBox(height: 6),
+          Row(children: [
+            Text('${stats.xp - from} / ${to - from} XP', style: theme.textTheme.bodySmall),
+            const Spacer(),
+            if (next != null)
+              Text(t.nextRank(next.emoji, t.rankName(next.id), next.minLevel), style: theme.textTheme.bodySmall),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _AchievementTile extends StatelessWidget {
+  const _AchievementTile({required this.achievement, required this.value});
+  final TieredAchievement achievement;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = S.of(context);
+    final theme = Theme.of(context);
+    final tier = achievement.tierFor(value);
+    final next = achievement.nextTarget(value);
+    final prev = tier == 0 ? 0 : achievement.thresholds[tier - 1];
+    final frac = next == null ? 1.0 : ((value - prev) / (next - prev)).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tier > 0 ? theme.colorScheme.secondaryContainer : theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(achievement.emoji, style: const TextStyle(fontSize: 26)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(t.achievementName(achievement.metric),
+                style: theme.textTheme.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          for (var i = 1; i <= 5; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Opacity(opacity: i <= tier ? 1 : 0.25, child: Text(kTierEmojis[i], style: const TextStyle(fontSize: 18))),
+            ),
+        ]),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(value: frac, minHeight: 6),
+        ),
+        const SizedBox(height: 4),
+        Text(next == null ? t.maxTier : '$value / $next', style: theme.textTheme.bodySmall),
+      ]),
     );
   }
 }
@@ -103,38 +240,28 @@ class _WeekChart extends StatelessWidget {
 
     return SizedBox(
       height: 140,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var i = 0; i < 7; i++)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text('${counts[i]}', style: theme.textTheme.labelSmall),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: maxV == 0 ? 2 : (90 * counts[i] / maxV).clamp(2, 90).toDouble(),
-                      decoration: BoxDecoration(
-                        color: counts[i] >= goal
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.outlineVariant,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(weekdays[days[i].weekday - 1],
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: i == 6 ? FontWeight.w700 : null,
-                        )),
-                  ],
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        for (var i = 0; i < 7; i++)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                Text('${counts[i]}', style: theme.textTheme.labelSmall),
+                const SizedBox(height: 4),
+                Container(
+                  height: maxV == 0 ? 2 : (90 * counts[i] / maxV).clamp(2, 90).toDouble(),
+                  decoration: BoxDecoration(
+                    color: counts[i] >= goal ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 6),
+                Text(weekdays[days[i].weekday - 1],
+                    style: theme.textTheme.labelSmall?.copyWith(fontWeight: i == 6 ? FontWeight.w700 : null)),
+              ]),
             ),
-        ],
-      ),
+          ),
+      ]),
     );
   }
 }
@@ -161,54 +288,6 @@ class _StatChip extends StatelessWidget {
         const SizedBox(width: 6),
         Text(label, style: theme.textTheme.bodySmall),
       ]),
-    );
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.achievement, required this.unlocked});
-  final Achievement achievement;
-  final bool unlocked;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final t = S.of(context);
-    final title = t.achievementTitle(achievement.id);
-    final desc = t.achievementDesc(achievement.id);
-    return Tooltip(
-      message: desc,
-      triggerMode: TooltipTriggerMode.tap,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: unlocked
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Opacity(
-          opacity: unlocked ? 1 : 0.4,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(unlocked ? achievement.emoji : '🔒', style: const TextStyle(fontSize: 32)),
-              const SizedBox(height: 6),
-              Text(title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium),
-              const SizedBox(height: 2),
-              Text(desc,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(fontSize: 10)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

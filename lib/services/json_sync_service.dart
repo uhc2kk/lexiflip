@@ -10,12 +10,32 @@ import '../models/flashcard.dart';
 /// One deck read from an import file.
 /// [id] is null when the file didn't say which deck it belongs to (old
 /// single-deck files) — the UI then asks the user for a name & folder.
+/// [folderPath] is up to 2 folder names, e.g. ["Arabcha", "Kitob 1"].
 class ImportedDeck {
-  ImportedDeck({this.id, required this.name, this.folder = '', required this.cards});
+  ImportedDeck({this.id, required this.name, List<String>? folderPath, required this.cards})
+      : folderPath = folderPath ?? [];
   final String? id;
   String name;
-  String folder;
+  List<String> folderPath;
+
+  /// When set, the deck goes into this existing folder (chosen in the UI).
+  String? targetFolderId;
+  bool targetRoot = false;
   final List<Flashcard> cards;
+}
+
+List<String> _path(Map d) {
+  final p = d['folderPath'];
+  if (p is List) {
+    return p.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).take(2).toList();
+  }
+  return (d['folder'] ?? '')
+      .toString()
+      .split(RegExp(r'\s*[/›>]\s*'))
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .take(2)
+      .toList();
 }
 
 class MergeResult {
@@ -58,7 +78,11 @@ class JsonSyncService {
 
   // ---------- Encode ----------
 
-  static String encode(Iterable<Deck> decks, Iterable<Flashcard> cards) {
+  static String encode(
+    Iterable<Deck> decks,
+    Iterable<Flashcard> cards,
+    List<String> Function(Deck) pathOf,
+  ) {
     final byDeck = <String, List<Flashcard>>{};
     for (final c in cards) {
       (byDeck[c.deckId] ??= []).add(c);
@@ -70,7 +94,10 @@ class JsonSyncService {
       'decks': [
         for (final d in decks)
           {
-            ...d.toJson(),
+            'id': d.id,
+            'name': d.name,
+            'folder': pathOf(d).join(' / '),
+            'folderPath': pathOf(d),
             'count': byDeck[d.id]?.length ?? 0,
             'cards': [for (final c in byDeck[d.id] ?? const []) c.toJson()],
           },
@@ -103,7 +130,7 @@ class JsonSyncService {
           ImportedDeck(
             id: (d['id'] ?? '').toString().isEmpty ? null : d['id'].toString(),
             name: (d['name'] ?? fallbackName).toString().trim(),
-            folder: (d['folder'] ?? '').toString().trim(),
+            folderPath: _path(d),
             cards: _cards(d['cards'] is List ? d['cards'] as List : const []),
           ),
       ];
@@ -117,7 +144,7 @@ class JsonSyncService {
               ? null
               : data['deckId'].toString(),
           name: name.isEmpty ? fallbackName : name,
-          folder: (data['folder'] ?? '').toString().trim(),
+          folderPath: _path(data),
           cards: _cards(data['cards'] as List),
         ),
       ];
@@ -185,11 +212,12 @@ class JsonSyncService {
   /// Android = "Save as" (SAF), Desktop = native dialog, Web = download.
   static Future<String?> exportToFile(
     Iterable<Deck> decks,
-    Iterable<Flashcard> cards, {
+    Iterable<Flashcard> cards,
+    List<String> Function(Deck) pathOf, {
     String? baseName,
   }) async {
     final name = 'lexiflip_${safeFileName(baseName ?? 'hammasi')}_${_stamp()}.json';
-    final bytes = Uint8List.fromList(utf8.encode(encode(decks, cards)));
+    final bytes = Uint8List.fromList(utf8.encode(encode(decks, cards, pathOf)));
     final uri = await FilePicker.saveFile(
       dialogTitle: 'LexiFlip eksport',
       fileName: name,

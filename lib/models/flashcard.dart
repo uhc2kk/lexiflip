@@ -31,6 +31,7 @@ class Flashcard {
     this.correct = 0,
     this.wrong = 0,
     this.lastReviewedAt,
+    this.starred = false,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -71,6 +72,9 @@ class Flashcard {
   final int correct;
   final int wrong;
   final DateTime? lastReviewedAt;
+
+  /// ⭐ "Saralangan" — collected for review across all decks.
+  final bool starred;
   final DateTime createdAt;
 
   /// "Last write wins" key when merging imported decks.
@@ -89,6 +93,7 @@ class Flashcard {
     int? correct,
     int? wrong,
     DateTime? lastReviewedAt,
+    bool? starred,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -105,6 +110,7 @@ class Flashcard {
       correct: correct ?? this.correct,
       wrong: wrong ?? this.wrong,
       lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
+      starred: starred ?? this.starred,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -125,6 +131,7 @@ class Flashcard {
         'status': status.name,
         'correct': correct,
         'wrong': wrong,
+        if (starred) 'starred': true,
         if (lastReviewedAt != null)
           'lastReviewedAt': lastReviewedAt!.toUtc().toIso8601String(),
         'createdAt': createdAt.toUtc().toIso8601String(),
@@ -154,6 +161,7 @@ class Flashcard {
       correct: number('correct'),
       wrong: number('wrong'),
       lastReviewedAt: maybeDate('lastReviewedAt'),
+      starred: json['starred'] == true || json['starred'].toString() == 'true',
       createdAt: created,
       updatedAt: maybeDate('updatedAt') ?? created,
     );

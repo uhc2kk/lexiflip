@@ -20,28 +20,60 @@ enum StudyMode {
   /// "Qaytarish" + "Muammoli" words, Bilaman / Bilmayman.
   practice,
 
-  /// Only problem words; "Bilmayman" sends the word to the back of the line
-  /// until every enemy is defeated.
+  /// Only problem words; "Bilmayman" sends the word to the back of the line.
   battle,
 
-  /// 60 seconds — how many words do you know?
-  blitz,
+  /// 60 / 30 seconds — how many words do you know?
+  blitz60,
+  blitz30,
+
+  /// Keep going until the first "Bilmayman".
+  perfect,
+
+  /// The hardest words (most mistakes). 3 lives.
+  boss,
 
   /// Just flip through every word (← / →), no scoring.
   browse,
 }
 
-const _blitzSeconds = 60;
+const kBossSize = 20;
+const kBossMin = 5;
+const kBossLives = 3;
+
+/// Which cards a mode starts with.
+List<Flashcard> cardsForMode(LibraryProvider lib, CardSource src, StudyMode mode) {
+  final all = lib.cardsFor(src);
+  switch (mode) {
+    case StudyMode.practice:
+      return all.where((c) => c.status != CardStatus.learned).toList();
+    case StudyMode.battle:
+      return all.where((c) => c.status == CardStatus.problem).toList();
+    case StudyMode.boss:
+      final sorted = [...all]
+        ..sort((a, b) {
+          final w = b.wrong.compareTo(a.wrong);
+          if (w != 0) return w;
+          int rank(Flashcard c) => switch (c.status) {
+                CardStatus.problem => 0,
+                CardStatus.review => 1,
+                CardStatus.learned => 2,
+              };
+          return rank(a).compareTo(rank(b));
+        });
+      return sorted.take(kBossSize).toList();
+    case StudyMode.blitz60:
+    case StudyMode.blitz30:
+    case StudyMode.perfect:
+    case StudyMode.browse:
+      return all;
+  }
+}
 
 class StudyScreen extends StatefulWidget {
-  const StudyScreen({
-    super.key,
-    required this.deckId,
-    required this.mode,
-    required this.cards,
-  });
+  const StudyScreen({super.key, required this.source, required this.mode, required this.cards});
 
-  final String deckId;
+  final CardSource source;
   final StudyMode mode;
   final List<Flashcard> cards;
 
@@ -56,31 +88,39 @@ class _StudyScreenState extends State<StudyScreen> {
   int _direction = 1;
   int _tick = 0;
   bool _finished = false;
+  bool _busy = false;
 
-  // session results
   int _known = 0;
   int _unknown = 0;
+  int _xp = 0;
   final Set<String> _missedIds = {};
 
-  // battle
+  // battle / boss
   late int _enemies;
   int _defeated = 0;
+  int _lives = kBossLives;
 
-  // blitz
+  // timed
   Timer? _timer;
-  int _secondsLeft = _blitzSeconds;
-  bool _blitzStarted = false;
+  late int _secondsLeft;
+  bool _timerStarted = false;
   bool _newRecord = false;
 
-  bool get _scored => widget.mode != StudyMode.browse;
+  StudyMode get _mode => widget.mode;
+  bool get _isBlitz => _mode == StudyMode.blitz60 || _mode == StudyMode.blitz30;
+  int get _blitzSeconds => _mode == StudyMode.blitz30 ? 30 : 60;
+  bool get _scored => _mode != StudyMode.browse;
+  bool get _won => (_mode == StudyMode.battle || _mode == StudyMode.boss) && _queue.isEmpty && _lives > 0;
+  bool get _answersVisible => _flipped || _isBlitz;
 
   @override
   void initState() {
     super.initState();
     final ids = widget.cards.map((c) => c.id).toList();
-    if (widget.mode != StudyMode.browse) ids.shuffle();
+    if (_mode != StudyMode.browse) ids.shuffle();
     _queue = ids;
     _enemies = ids.length;
+    _secondsLeft = _blitzSeconds;
     HardwareKeyboard.instance.addHandler(_handleKey);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onCardShown());
   }
@@ -106,15 +146,14 @@ class _StudyScreenState extends State<StudyScreen> {
   }
 
   // ---------------- Keyboard ----------------
-  //  Space flip · P pronounce
+  //  Space flip · P pronounce · S star
   //  browse: ← / → navigate
-  //  scored: ← or 1 = Bilmayman, → or 2 = Bilaman (after flipping)
+  //  scored: ← or 1 = Bilmayman, → or 2 = Bilaman
 
   bool get _isTyping {
     final ctx = FocusManager.instance.primaryFocus?.context;
     if (ctx == null) return false;
-    return ctx.widget is EditableText ||
-        ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+    return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null;
   }
 
   bool _handleKey(KeyEvent event) {
@@ -140,15 +179,20 @@ class _StudyScreenState extends State<StudyScreen> {
       if (down) _speak();
       return true;
     }
+    if (key == LogicalKeyboardKey.keyS) {
+      final c = _current;
+      if (down && c != null) context.read<LibraryProvider>().toggleStar(c.id);
+      return true;
+    }
 
     final left = key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.digit1;
     final right = key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.digit2;
     if (!left && !right) return false;
     if (!down) return true;
 
-    if (widget.mode == StudyMode.browse) {
+    if (_mode == StudyMode.browse) {
       _browse(right ? 1 : -1);
-    } else if (_flipped || widget.mode == StudyMode.blitz) {
+    } else if (_answersVisible) {
       _answer(known: right);
     }
     return true;
@@ -158,7 +202,7 @@ class _StudyScreenState extends State<StudyScreen> {
 
   void _toggleFlip() {
     if (_current == null) return;
-    _startBlitzIfNeeded();
+    _startTimerIfNeeded();
     setState(() => _flipped = !_flipped);
   }
 
@@ -179,9 +223,9 @@ class _StudyScreenState extends State<StudyScreen> {
     _onCardShown();
   }
 
-  void _startBlitzIfNeeded() {
-    if (widget.mode != StudyMode.blitz || _blitzStarted) return;
-    _blitzStarted = true;
+  void _startTimerIfNeeded() {
+    if (!_isBlitz || _timerStarted) return;
+    _timerStarted = true;
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       setState(() => _secondsLeft--);
@@ -194,8 +238,9 @@ class _StudyScreenState extends State<StudyScreen> {
 
   Future<void> _answer({required bool known}) async {
     final card = _current;
-    if (card == null) return;
-    _startBlitzIfNeeded();
+    if (card == null || _busy) return;
+    _busy = true;
+    _startTimerIfNeeded();
     FocusManager.instance.primaryFocus?.unfocus();
 
     final lib = context.read<LibraryProvider>();
@@ -210,23 +255,36 @@ class _StudyScreenState extends State<StudyScreen> {
         _missedIds.add(card.id);
       }
 
-      switch (widget.mode) {
+      switch (_mode) {
         case StudyMode.practice:
           _pos++;
           if (_pos >= _queue.length) _finished = true;
         case StudyMode.battle:
-          final id = _queue.removeAt(_pos);
+        case StudyMode.boss:
+          final id = _queue.removeAt(_pos % _queue.length);
           if (known) {
             _defeated++;
           } else {
-            _queue.add(id); // comes back later
+            _queue.add(id);
+            if (_mode == StudyMode.boss) _lives--;
           }
-          if (_queue.isEmpty) {
+          if (_queue.isEmpty || _lives <= 0) {
             _finished = true;
           } else {
             _pos = _pos % _queue.length;
           }
-        case StudyMode.blitz:
+        case StudyMode.perfect:
+          if (!known) {
+            _finished = true;
+          } else {
+            _pos++;
+            if (_pos >= _queue.length) {
+              _queue.shuffle();
+              _pos = 0;
+            }
+          }
+        case StudyMode.blitz60:
+        case StudyMode.blitz30:
           _pos++;
           if (_pos >= _queue.length) {
             _queue.shuffle();
@@ -240,9 +298,17 @@ class _StudyScreenState extends State<StudyScreen> {
       _tick++;
     });
 
-    await lib.answer(card.id, known: known);
-    final unlocked = await stats.recordAnswer(goal: goal, library: lib);
-    if (mounted) showAchievements(context, unlocked);
+    final before = await lib.answer(card.id, known: known);
+    final reward = await stats.recordAnswer(
+      known: known,
+      becameLearned: known && before != CardStatus.learned,
+      defeatedProblem: known && (_mode == StudyMode.battle || _mode == StudyMode.boss),
+      goal: goal,
+      lib: lib,
+    );
+    _xp += reward.xp;
+    if (mounted) showReward(context, reward);
+    _busy = false;
 
     if (_finished) {
       await _onFinished();
@@ -262,37 +328,57 @@ class _StudyScreenState extends State<StudyScreen> {
     final lib = context.read<LibraryProvider>();
     final stats = context.read<StatsProvider>();
     final goal = context.read<SettingsProvider>().dailyGoal;
-    List<Achievement> unlocked = const [];
+    final key = widget.source.key;
 
-    if (widget.mode == StudyMode.blitz) {
-      final (record, u) =
-          await stats.recordBlitz(widget.deckId, _known, goal: goal, library: lib);
-      unlocked = u;
-      if (mounted) setState(() => _newRecord = record);
-    } else if (widget.mode == StudyMode.battle && _queue.isEmpty) {
-      unlocked = await stats.recordBattleWin(goal: goal, library: lib);
+    Reward? r;
+    switch (_mode) {
+      case StudyMode.blitz60:
+      case StudyMode.blitz30:
+        r = await stats.recordSession(SessionKind.blitz,
+            sourceKey: key, score: _known, seconds: _blitzSeconds, goal: goal, lib: lib);
+      case StudyMode.perfect:
+        r = await stats.recordSession(SessionKind.perfect, sourceKey: key, score: _known, goal: goal, lib: lib);
+      case StudyMode.battle:
+        if (_won) {
+          r = await stats.recordSession(SessionKind.battleWin,
+              sourceKey: key, enemies: _enemies, goal: goal, lib: lib);
+        }
+      case StudyMode.boss:
+        if (_won) r = await stats.recordSession(SessionKind.bossWin, sourceKey: key, goal: goal, lib: lib);
+      case StudyMode.practice:
+      case StudyMode.browse:
+        break;
     }
-    if (mounted) showAchievements(context, unlocked);
+    if (!mounted || r == null) return;
+    final reward = r;
+    setState(() {
+      _xp += reward.xp;
+      _newRecord = reward.newRecord;
+    });
+    showReward(context, reward);
   }
 
   void _restart(StudyMode mode, List<Flashcard> cards) {
     Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => StudyScreen(deckId: widget.deckId, mode: mode, cards: cards),
+      builder: (_) => StudyScreen(source: widget.source, mode: mode, cards: cards),
     ));
   }
 
   // ---------------- UI ----------------
 
-  String _title(S t) => switch (widget.mode) {
+  String _title(S t) => switch (_mode) {
         StudyMode.practice => t.modePractice,
-        StudyMode.battle => t.modeBattle,
-        StudyMode.blitz => t.modeBlitz,
+        StudyMode.battle => '⚔️ ${t.battleTitle}',
+        StudyMode.blitz60 => '⏱️ ${t.blitzTitle}',
+        StudyMode.blitz30 => '⚡ ${t.lightningTitle}',
+        StudyMode.perfect => '🎯 ${t.perfectTitle}',
+        StudyMode.boss => '🐉 ${t.bossTitle}',
         StudyMode.browse => t.modeBrowse,
       };
 
   @override
   Widget build(BuildContext context) {
-    context.watch<LibraryProvider>(); // live mnemonic / edits
+    context.watch<LibraryProvider>();
     final theme = Theme.of(context);
     final t = S.of(context);
     final card = _current;
@@ -302,7 +388,13 @@ class _StudyScreenState extends State<StudyScreen> {
       appBar: AppBar(
         title: Text(_title(t)),
         actions: [
-          if (card != null && !_finished)
+          if (card != null && !_finished) ...[
+            IconButton(
+              tooltip: '${t.starToggle} (S)',
+              icon: Icon(card.starred ? Icons.star_rounded : Icons.star_outline_rounded,
+                  color: card.starred ? const Color(0xFFF5B301) : null),
+              onPressed: () => context.read<LibraryProvider>().toggleStar(card.id),
+            ),
             IconButton(
               tooltip: t.edit,
               icon: const Icon(Icons.edit_outlined),
@@ -310,8 +402,8 @@ class _StudyScreenState extends State<StudyScreen> {
                 builder: (_) => CardEditorScreen(deckId: card.deckId, cardId: card.id),
               )),
             ),
-          if (_scored && !_finished && widget.mode != StudyMode.blitz)
-            TextButton(onPressed: _finish, child: Text(t.finish)),
+          ],
+          if (_scored && !_finished && !_isBlitz) TextButton(onPressed: _finish, child: Text(t.finish)),
         ],
       ),
       body: SafeArea(
@@ -321,94 +413,52 @@ class _StudyScreenState extends State<StudyScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
               child: _finished || card == null
-                  ? _Summary(
-                      mode: widget.mode,
-                      known: _known,
-                      unknown: _unknown,
-                      defeated: _defeated,
-                      enemies: _enemies,
-                      won: widget.mode == StudyMode.battle && _queue.isEmpty,
-                      newRecord: _newRecord,
-                      onRepeatMissed: _missedIds.isEmpty
-                          ? null
-                          : () {
-                              final lib = context.read<LibraryProvider>();
-                              final missed = _missedIds
-                                  .map(lib.cardById)
-                                  .whereType<Flashcard>()
-                                  .toList();
-                              _restart(StudyMode.practice, missed);
-                            },
-                      onAgain: () {
-                        final lib = context.read<LibraryProvider>();
-                        final fresh = switch (widget.mode) {
-                          StudyMode.battle =>
-                            lib.cardsOfStatus(widget.deckId, CardStatus.problem),
-                          StudyMode.practice => lib
-                              .cardsOf(widget.deckId)
-                              .where((c) => c.status != CardStatus.learned)
-                              .toList(),
-                          _ => lib.cardsOf(widget.deckId),
-                        };
-                        if (fresh.isEmpty) {
-                          Navigator.of(context).pop();
-                          showSnack(context, widget.mode == StudyMode.battle
-                              ? t.noProblemLeft
-                              : t.allLearnedShort);
-                          return;
-                        }
-                        _restart(widget.mode, fresh);
-                      },
-                    )
-                  : Column(
-                      children: [
-                        _header(theme, t),
-                        const SizedBox(height: 16),
-                        Expanded(
-                          child: GestureDetector(
-                            onHorizontalDragEnd: widget.mode == StudyMode.browse
-                                ? (d) {
-                                    final v = d.primaryVelocity ?? 0;
-                                    if (v < -250) _browse(1);
-                                    if (v > 250) _browse(-1);
-                                  }
-                                : null,
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 240),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, anim) => FadeTransition(
-                                opacity: anim,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: Offset(0.1 * _direction, 0),
-                                    end: Offset.zero,
-                                  ).animate(anim),
-                                  child: child,
-                                ),
+                  ? _summary(t)
+                  : Column(children: [
+                      _header(theme, t),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: GestureDetector(
+                          onHorizontalDragEnd: _mode == StudyMode.browse
+                              ? (d) {
+                                  final v = d.primaryVelocity ?? 0;
+                                  if (v < -250) _browse(1);
+                                  if (v > 250) _browse(-1);
+                                }
+                              : null,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 240),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, anim) => FadeTransition(
+                              opacity: anim,
+                              child: SlideTransition(
+                                position: Tween<Offset>(begin: Offset(0.1 * _direction, 0), end: Offset.zero)
+                                    .animate(anim),
+                                child: child,
                               ),
-                              child: FlipCard(
-                                key: ValueKey('${card.id}#$_tick'),
-                                flipped: _flipped,
-                                onTap: _toggleFlip,
-                                front: CardFront(card: card),
-                                back: CardBack(card: card),
-                              ),
+                            ),
+                            child: FlipCard(
+                              key: ValueKey('${card.id}#$_tick'),
+                              flipped: _flipped,
+                              onTap: _toggleFlip,
+                              front: CardFront(card: card),
+                              back: CardBack(card: card),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        _controls(theme, t),
-                        if (showKeyHints) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            widget.mode == StudyMode.browse ? t.keyHintBrowse : t.keyHintScored,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                          ),
-                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _controls(t),
+                      if (showKeyHints) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _mode == StudyMode.browse ? t.keyHintBrowse : t.keyHintScored,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
                       ],
-                    ),
+                    ]),
             ),
           ),
         ),
@@ -416,44 +466,52 @@ class _StudyScreenState extends State<StudyScreen> {
     );
   }
 
+  Widget _bar(double value, {Color? color, double height = 6}) => ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: LinearProgressIndicator(value: value.clamp(0.0, 1.0), minHeight: height, color: color),
+      );
+
   Widget _header(ThemeData theme, S t) {
-    switch (widget.mode) {
-      case StudyMode.blitz:
+    final style = theme.textTheme.titleMedium;
+    switch (_mode) {
+      case StudyMode.blitz60:
+      case StudyMode.blitz30:
         final frac = _secondsLeft / _blitzSeconds;
         return Column(children: [
           Row(children: [
-            Text(_blitzStarted ? '$_secondsLeft s' : t.tapToStart,
-                style: theme.textTheme.titleMedium),
+            Text(_timerStarted ? '$_secondsLeft s' : t.tapToStart, style: style),
             const Spacer(),
-            Text('✅ $_known', style: theme.textTheme.titleMedium),
+            Text('✅ $_known', style: style),
           ]),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 6,
-              color: frac < 0.25 ? BucketColors.problem(context) : null,
-            ),
-          ),
+          _bar(frac, color: frac < 0.25 ? BucketColors.problem(context) : null),
         ]);
       case StudyMode.battle:
-        final left = _queue.length;
         return Column(children: [
           Row(children: [
-            Text(t.enemiesLeft(left), style: theme.textTheme.titleMedium),
+            Text(t.enemiesLeft(_queue.length), style: style),
             const Spacer(),
-            Text('🗡️ $_defeated / $_enemies', style: theme.textTheme.titleMedium),
+            Text('🗡️ $_defeated / $_enemies', style: style),
           ]),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: _enemies == 0 ? 0 : left / _enemies,
-              minHeight: 8,
-              color: BucketColors.problem(context),
-            ),
-          ),
+          _bar(_enemies == 0 ? 0 : _queue.length / _enemies, color: BucketColors.problem(context), height: 8),
+        ]);
+      case StudyMode.boss:
+        return Column(children: [
+          Row(children: [
+            Text('🐉 ${_queue.length} / $_enemies', style: style),
+            const Spacer(),
+            Text(List.generate(kBossLives, (i) => i < _lives ? '❤️' : '🖤').join(' '), style: style),
+          ]),
+          const SizedBox(height: 6),
+          _bar(_enemies == 0 ? 0 : _queue.length / _enemies, color: Colors.deepPurple, height: 10),
+        ]);
+      case StudyMode.perfect:
+        final best = context.read<StatsProvider>().best('perfect:${widget.source.key}');
+        return Row(children: [
+          Text('🎯 $_known', style: theme.textTheme.headlineSmall),
+          const Spacer(),
+          if (best > 0) Text(t.record(best), style: style),
         ]);
       case StudyMode.practice:
       case StudyMode.browse:
@@ -466,42 +524,26 @@ class _StudyScreenState extends State<StudyScreen> {
             if (_scored) Text('✅ $_known   ❌ $_unknown', style: theme.textTheme.labelLarge),
           ]),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(value: total == 0 ? 0 : n / total, minHeight: 3),
-          ),
+          _bar(total == 0 ? 0 : n / total, height: 3),
         ]);
     }
   }
 
-  Widget _controls(ThemeData theme, S t) {
-    if (widget.mode == StudyMode.browse) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton.outlined(
-            tooltip: t.prev,
-            onPressed: () => _browse(-1),
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
-          const SizedBox(width: 16),
-          FilledButton.tonalIcon(
-            onPressed: _toggleFlip,
-            icon: const Icon(Icons.flip_rounded),
-            label: Text(_flipped ? t.showWord : t.showMeaning),
-          ),
-          const SizedBox(width: 16),
-          IconButton.outlined(
-            tooltip: t.next,
-            onPressed: () => _browse(1),
-            icon: const Icon(Icons.arrow_forward_rounded),
-          ),
-        ],
-      );
+  Widget _controls(S t) {
+    if (_mode == StudyMode.browse) {
+      return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        IconButton.outlined(tooltip: t.prev, onPressed: () => _browse(-1), icon: const Icon(Icons.arrow_back_rounded)),
+        const SizedBox(width: 16),
+        FilledButton.tonalIcon(
+          onPressed: _toggleFlip,
+          icon: const Icon(Icons.flip_rounded),
+          label: Text(_flipped ? t.showWord : t.showMeaning),
+        ),
+        const SizedBox(width: 16),
+        IconButton.outlined(tooltip: t.next, onPressed: () => _browse(1), icon: const Icon(Icons.arrow_forward_rounded)),
+      ]);
     }
-
-    final showAnswers = _flipped || widget.mode == StudyMode.blitz;
-    if (!showAnswers) {
+    if (!_answersVisible) {
       return FilledButton.tonalIcon(
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
         onPressed: _toggleFlip,
@@ -537,84 +579,72 @@ class _StudyScreenState extends State<StudyScreen> {
       ),
     ]);
   }
-}
 
-class _Summary extends StatelessWidget {
-  const _Summary({
-    required this.mode,
-    required this.known,
-    required this.unknown,
-    required this.defeated,
-    required this.enemies,
-    required this.won,
-    required this.newRecord,
-    required this.onRepeatMissed,
-    required this.onAgain,
-  });
-
-  final StudyMode mode;
-  final int known;
-  final int unknown;
-  final int defeated;
-  final int enemies;
-  final bool won;
-  final bool newRecord;
-  final VoidCallback? onRepeatMissed;
-  final VoidCallback onAgain;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _summary(S t) {
     final theme = Theme.of(context);
-    final t = S.of(context);
-    final (emoji, title, subtitle) = switch (mode) {
-      StudyMode.blitz => (
-          newRecord ? '🏆' : '⏱️',
-          newRecord ? t.newRecord : t.timeUp,
-          t.blitzResult(known),
+    final (emoji, title, subtitle) = switch (_mode) {
+      StudyMode.blitz60 || StudyMode.blitz30 => (
+          _newRecord ? '🏆' : (_mode == StudyMode.blitz30 ? '⚡' : '⏱️'),
+          _newRecord ? t.newRecord : t.timeUp,
+          t.blitzResult(_known, _blitzSeconds),
         ),
-      StudyMode.battle => won
-          ? ('⚔️', t.victory, t.victoryMsg(enemies))
-          : ('🛡️', t.battleStopped, t.battleProgress(defeated, enemies)),
-      _ => (
-          unknown == 0 && known > 0 ? '🎉' : '👍',
-          t.practiceDone,
-          t.practiceResult(known, unknown),
+      StudyMode.perfect => (
+          _newRecord ? '🏆' : '🎯',
+          _newRecord ? t.newRecord : t.perfectOver,
+          t.perfectResult(_known),
         ),
+      StudyMode.battle => _won
+          ? ('⚔️', t.victory, t.victoryMsg(_enemies))
+          : ('🛡️', t.battleStopped, t.battleProgress(_defeated, _enemies)),
+      StudyMode.boss => _won
+          ? ('🐉', t.bossWon, t.bossWonMsg(_lives))
+          : ('💀', t.bossLost, t.battleProgress(_defeated, _enemies)),
+      _ => (_unknown == 0 && _known > 0 ? '🎉' : '👍', t.practiceDone, t.practiceResult(_known, _unknown)),
     };
 
+    final lib = context.read<LibraryProvider>();
     return Center(
       child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 72)),
-            const SizedBox(height: 12),
-            Text(title, style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(subtitle, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
-            const SizedBox(height: 28),
-            if (onRepeatMissed != null && mode != StudyMode.battle) ...[
-              FilledButton.icon(
-                style: FilledButton.styleFrom(minimumSize: const Size(260, 48)),
-                onPressed: onRepeatMissed,
-                icon: const Icon(Icons.replay_rounded),
-                label: Text(t.repeatMissed),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(emoji, style: const TextStyle(fontSize: 72)),
+          const SizedBox(height: 12),
+          Text(title, style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text(subtitle, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
+          if (_xp > 0) ...[
+            const SizedBox(height: 10),
+            Chip(avatar: const Text('✨'), label: Text('+$_xp XP')),
+          ],
+          const SizedBox(height: 24),
+          if (_missedIds.isNotEmpty && _mode != StudyMode.battle && _mode != StudyMode.browse) ...[
+            FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: const Size(260, 48)),
+              onPressed: () => _restart(
+                StudyMode.practice,
+                _missedIds.map(lib.cardById).whereType<Flashcard>().toList(),
               ),
-              const SizedBox(height: 10),
-            ],
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(260, 48)),
-              onPressed: onAgain,
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(t.again),
+              icon: const Icon(Icons.replay_rounded),
+              label: Text(t.repeatMissed),
             ),
             const SizedBox(height: 10),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(t.back),
-            ),
           ],
-        ),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(minimumSize: const Size(260, 48)),
+            onPressed: () {
+              final fresh = cardsForMode(lib, widget.source, _mode);
+              if (fresh.isEmpty || (_mode == StudyMode.boss && fresh.length < kBossMin)) {
+                Navigator.of(context).pop();
+                showSnack(context, _mode == StudyMode.battle ? t.noProblemLeft : t.allLearnedShort);
+                return;
+              }
+              _restart(_mode, fresh);
+            },
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(t.again),
+          ),
+          const SizedBox(height: 10),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(t.back)),
+        ]),
       ),
     );
   }

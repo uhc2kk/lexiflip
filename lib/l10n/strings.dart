@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import '../models/gamification.dart';
+
 /// Word language shown in the 'missing voice' message.
 enum WordScriptName { arabic, russian, english }
 
@@ -157,13 +159,13 @@ class S {
       'Space flip · ← → move · P speak',
       'Space перевернуть · ← → листать · P озвучить');
   String get keyHintScored => _t(
-      'Space aylantirish · ← / 1 bilmayman · → / 2 bilaman · P talaffuz',
-      'Space flip · ← / 1 don\'t know · → / 2 know · P speak',
-      'Space перевернуть · ← / 1 не знаю · → / 2 знаю · P озвучить');
+      'Space aylantirish · ← / 1 bilmayman · → / 2 bilaman · P talaffuz · S ⭐',
+      'Space flip · ← / 1 don\'t know · → / 2 know · P speak · S ⭐',
+      'Space перевернуть · ← / 1 не знаю · → / 2 знаю · P озвучить · S ⭐');
   String get newRecord => _t('Yangi rekord!', 'New record!', 'Новый рекорд!');
   String get timeUp => _t('Vaqt tugadi', 'Time\'s up', 'Время вышло');
-  String blitzResult(int n) => _t(
-      '60 soniyada $n ta so\'z topdingiz', 'You knew $n words in 60 seconds', 'За 60 секунд: $n слов');
+  String blitzResult(int n, int sec) => _t(
+      '$sec soniyada $n ta so\'z topdingiz', 'You knew $n words in $sec seconds', 'За $sec секунд: $n слов');
   String get victory => _t('G\'alaba!', 'Victory!', 'Победа!');
   String victoryMsg(int n) => _t(
       'Barcha $n ta muammoli so\'z yengildi', 'All $n problem words defeated', 'Все трудные слова ($n) побеждены');
@@ -246,10 +248,7 @@ class S {
   String get statAnswers => _t('javob', 'answers', 'ответов');
   String get statBattles => _t('jang g\'alabasi', 'battle wins', 'побед в битвах');
   String get blitzRecords => _t('Tezkor raund rekordlari', 'Speed round records', 'Рекорды быстрого раунда');
-  String get noRecords => _t(
-      'Hali rekord yo\'q. To\'plamni ochib "Tezkor raund"ni boshlang!',
-      'No records yet. Open a deck and start a "Speed round"!',
-      'Рекордов пока нет. Откройте набор и начните «Быстрый раунд»!');
+  String get noRecords => _t('Hali rekord yo\'q', 'No records yet', 'Рекордов пока нет');
   String wordsCount(int n) => _t('$n ta', '$n', '$n');
   String achievementsTitle(int a, int b) => _t('Yutuqlar ($a / $b)', 'Achievements ($a / $b)', 'Достижения ($a / $b)');
   List<String> get weekdays => switch (lang) {
@@ -259,41 +258,125 @@ class S {
       };
   String get newAchievement => _t('Yangi yutuq!', 'New achievement!', 'Новое достижение!');
 
-  String achievementTitle(String id) => switch (id) {
-        'first_answer' => _t('Birinchi qadam', 'First step', 'Первый шаг'),
-        'learned_10' => _t('10 ta so\'z', '10 words', '10 слов'),
-        'learned_50' => _t('50 ta so\'z', '50 words', '50 слов'),
-        'learned_100' => _t('100 ta so\'z', '100 words', '100 слов'),
-        'learned_500' => _t('500 ta so\'z', '500 words', '500 слов'),
-        'daily_goal' => _t('Maqsadga erishdim', 'Goal reached', 'Цель достигнута'),
-        'streak_3' => _t('3 kun ketma-ket', '3-day streak', '3 дня подряд'),
-        'streak_7' => _t('Bir hafta', 'One week', 'Неделя'),
-        'streak_30' => _t('Bir oy', 'One month', 'Месяц'),
-        'blitz_20' => _t('Tezkor', 'Quick', 'Быстрый'),
-        'blitz_40' => _t('Chaqmoq', 'Lightning', 'Молния'),
-        'battle_win' => _t('G\'olib', 'Winner', 'Победитель'),
-        'battle_5' => _t('Jangchi', 'Warrior', 'Воин'),
-        'deck_master' => _t('Mavzu ustasi', 'Deck master', 'Мастер набора'),
+  // ---------------- v2: folders ----------------
+  String get add => _t('Qo\'shish', 'Add', 'Добавить');
+  String get newFolder => _t('Yangi papka', 'New folder', 'Новая папка');
+  String get newSubfolder => _t('Yangi ichki papka', 'New sub-folder', 'Новая подпапка');
+  String get rename => _t('Nomini o\'zgartirish', 'Rename', 'Переименовать');
+  String get move => _t('Ko\'chirish', 'Move', 'Переместить');
+  String get moveFolder => _t('Papkani ko\'chirish', 'Move folder', 'Переместить папку');
+  String get cantMoveFolder => _t(
+      'Ichida papkalari bor papkani boshqa papkaga ko\'chirib bo\'lmaydi (faqat 2 qavat).',
+      'A folder with sub-folders can\'t go inside another folder (2 levels max).',
+      'Папку с подпапками нельзя вложить в другую (максимум 2 уровня).');
+  String deleteFolderMsg(String name, int decks, int words) => _t(
+      '"$name" papkasi, undagi $decks ta to\'plam va $words ta so\'z o\'chiriladi.',
+      'Folder "$name" with $decks decks and $words words will be deleted.',
+      'Папка «$name», наборов: $decks, слов: $words — всё будет удалено.');
+  String get select => _t('Tanlash', 'Select', 'Выбрать');
+  String get selectHint => _t(
+      'Birga mashq qilish uchun to\'plamlarni belgilang.',
+      'Tick the decks you want to practise together.',
+      'Отметьте наборы для совместной тренировки.');
+  String practiceTogether(int n) => _t('Birga mashq ($n)', 'Practise together ($n)', 'Вместе ($n)');
+  String get folders => _t('Papkalar', 'Folders', 'Папки');
+  String get decks => _t('To\'plamlar', 'Decks', 'Наборы');
+  String folderInfo(int subs, int decks, int learned, int total) => _t(
+      '${subs > 0 ? '$subs ta papka · ' : ''}$decks ta to\'plam · $learned/$total yodlangan',
+      '${subs > 0 ? '$subs folders · ' : ''}$decks decks · $learned/$total learned',
+      '${subs > 0 ? 'папок: $subs · ' : ''}наборов: $decks · выучено $learned/$total');
+  String practiceFolder(int n) =>
+      _t('Butun papkani mashq qilish ($n)', 'Practise the whole folder ($n)', 'Тренировать всю папку ($n)');
+  String get emptyFolder => _t('Papka bo\'sh', 'This folder is empty', 'Папка пуста');
+  String get topLevel => _t('Asosiy sahifa (papkasiz)', 'Home (no folder)', 'Главная (без папки)');
+  String get folder => _t('Papka', 'Folder', 'Папка');
+  String get wholeFolder => _t('Butun papka', 'Whole folder', 'Вся папка');
+  String selectedDecks(int n) => _t('Tanlangan $n ta to\'plam', '$n selected decks', 'Выбрано наборов: $n');
+  String get importTitle => _t('Import', 'Import', 'Импорт');
+  String fileFolderHint(String path) => _t(
+      'Fayldagi papka: $path — papka tanlamasangiz, shu nom bilan yaratiladi.',
+      'Folder in the file: $path — it will be created unless you pick a folder.',
+      'Папка в файле: $path — будет создана, если не выбрать другую.');
+
+  // ---------------- v2: starred ----------------
+  String get starred => _t('Saralangan so\'zlar', 'Starred words', 'Избранные слова');
+  String starredSub(int n) => n == 0
+      ? _t('Kartadagi ⭐ ni bosing — so\'z shu yerga yig\'iladi', 'Tap ⭐ on a card to collect it here', 'Нажмите ⭐ на карточке, чтобы собрать её здесь')
+      : _t('$n ta so\'z', '$n words', 'Слов: $n');
+  String get starredEmpty => _t(
+      'Hali saralangan so\'z yo\'q. Mashq paytida ⭐ (yoki S tugmasi) bilan belgilang.',
+      'No starred words yet. Mark them with ⭐ (or the S key) while practising.',
+      'Пока нет избранных. Отмечайте ⭐ (или клавишей S) во время тренировки.');
+  String get starToggle => _t('Saralash', 'Star', 'В избранное');
+
+  // ---------------- v2: modes ----------------
+  String get challenges => _t('Challenge\'lar', 'Challenges', 'Челленджи');
+  String secondsN(int n) => _t('$n soniya', '$n seconds', '$n секунд');
+  String get lightningTitle => _t('Chaqmoq raund', 'Lightning round', 'Молния');
+  String get perfectTitle => _t('Xatosiz seriya', 'No-mistake streak', 'Без ошибок');
+  String get perfectSub => _t('Bitta xato — o\'yin tugadi', 'One mistake — game over', 'Одна ошибка — конец');
+  String get bossTitle => _t('Boss jang', 'Boss battle', 'Битва с боссом');
+  String get bossSub => _t('20 ta eng qiyin so\'z · 3 ❤️', '20 hardest words · 3 ❤️', '20 самых трудных · 3 ❤️');
+  String bossNeeds(int n) => _t('Boss jang uchun kamida $n ta so\'z kerak.', 'Boss battle needs at least $n words.', 'Для босса нужно минимум $n слов.');
+  String get perfectOver => _t('Seriya tugadi', 'Streak over', 'Серия окончена');
+  String perfectResult(int n) => _t('Ketma-ket $n ta so\'zni xatosiz topdingiz', '$n words in a row without a mistake', '$n слов подряд без ошибок');
+  String get bossWon => _t('Boss yengildi!', 'Boss defeated!', 'Босс повержен!');
+  String bossWonMsg(int lives) => _t('$lives ta ❤️ bilan g\'alaba', 'Won with $lives ❤️ left', 'Победа, осталось ❤️: $lives');
+  String get bossLost => _t('Boss yutdi…', 'The boss won…', 'Босс победил…');
+
+  // ---------------- v2: levels & quests ----------------
+  String levelN(int n) => _t('$n-daraja', 'Level $n', 'Уровень $n');
+  String levelUp(int n) => _t('Yangi daraja: $n!', 'Level up: $n!', 'Новый уровень: $n!');
+  String nextRank(String emoji, String name, int level) =>
+      _t('Keyingi: $emoji $name ($level)', 'Next: $emoji $name ($level)', 'Далее: $emoji $name ($level)');
+  String rankName(String id) => switch (id) {
+        'beginner' => _t('Boshlovchi', 'Beginner', 'Новичок'),
+        'amateur' => _t('Havaskor', 'Amateur', 'Любитель'),
+        'student' => _t('Talaba', 'Student', 'Студент'),
+        'expert' => _t('Bilimdon', 'Know-it-all', 'Знаток'),
+        'seeker' => _t('Tolib', 'Seeker', 'Искатель'),
+        'scholar' => _t('Olim', 'Scholar', 'Учёный'),
+        'master' => _t('Ustoz', 'Master', 'Мастер'),
+        'sage' => _t('Alloma', 'Sage', 'Мудрец'),
+        'wise' => _t('Donishmand', 'Grand sage', 'Великий мудрец'),
+        'legend' => _t('Afsona', 'Legend', 'Легенда'),
+        'eternal' => _t('Mangu', 'Eternal', 'Вечный'),
         _ => id,
       };
+  String get dailyQuests => _t('Kunlik vazifalar', 'Daily quests', 'Задания дня');
+  String get weeklyQuests => _t('Haftalik vazifalar', 'Weekly quests', 'Задания недели');
+  String questTitle(QuestDef q) {
+    final n = q.target;
+    return switch (q.type) {
+      QuestType.answers => _t('$n ta so\'zga javob ber', 'Answer $n words', 'Ответьте на $n слов'),
+      QuestType.known => _t('$n marta "Bilaman"', '"I know" $n times', '«Знаю» $n раз'),
+      QuestType.learnedNew => _t('$n ta yangi so\'z yodla', 'Learn $n new words', 'Выучите $n новых слов'),
+      QuestType.blitzRounds => _t('$n ta tezkor raund o\'yna', 'Play $n speed rounds', 'Сыграйте $n быстрых раунда'),
+      QuestType.battleWins => _t('Muammolilar jangida $n marta yut', 'Win $n problem battles', 'Победите в битве $n раз'),
+      QuestType.defeated => _t('$n ta muammoli so\'zni yeng', 'Defeat $n problem words', 'Победите $n трудных слов'),
+      QuestType.perfectRun => _t('Xatosiz seriyada $n ga yet', 'Reach $n in a no-mistake streak', 'Наберите $n без ошибок'),
+      QuestType.bossWins => _t('Bossni $n marta yeng', 'Defeat the boss $n times', 'Победите босса $n раз'),
+      QuestType.goalDays => _t('$n kun kunlik maqsadni bajar', 'Hit your daily goal on $n days', 'Выполните цель дня $n дней'),
+    };
+  }
 
-  String achievementDesc(String id) => switch (id) {
-        'first_answer' => _t('Birinchi so\'zga javob berdingiz', 'Answered your first word', 'Первый ответ'),
-        'learned_10' => _t('10 ta so\'z yodlandi', '10 words learned', 'Выучено 10 слов'),
-        'learned_50' => _t('50 ta so\'z yodlandi', '50 words learned', 'Выучено 50 слов'),
-        'learned_100' => _t('100 ta so\'z yodlandi', '100 words learned', 'Выучено 100 слов'),
-        'learned_500' => _t('500 ta so\'z yodlandi', '500 words learned', 'Выучено 500 слов'),
-        'daily_goal' => _t('Kunlik maqsad birinchi marta bajarildi', 'Daily goal reached for the first time', 'Дневная цель выполнена впервые'),
-        'streak_3' => _t('Kunlik maqsad 3 kun ketma-ket bajarildi', 'Daily goal 3 days in a row', 'Цель 3 дня подряд'),
-        'streak_7' => _t('Kunlik maqsad 7 kun ketma-ket bajarildi', 'Daily goal 7 days in a row', 'Цель 7 дней подряд'),
-        'streak_30' => _t('Kunlik maqsad 30 kun ketma-ket bajarildi', 'Daily goal 30 days in a row', 'Цель 30 дней подряд'),
-        'blitz_20' => _t('Tezkor raundda 20+ so\'z topildi', '20+ words in a speed round', '20+ слов в быстром раунде'),
-        'blitz_40' => _t('Tezkor raundda 40+ so\'z topildi', '40+ words in a speed round', '40+ слов в быстром раунде'),
-        'battle_win' => _t('Muammolilar jangida g\'alaba qozonildi', 'Won a problem battle', 'Победа в битве с трудными'),
-        'battle_5' => _t('Muammolilar jangida 5 marta g\'alaba', '5 problem battle wins', '5 побед в битвах'),
-        'deck_master' => _t('Bitta to\'plam 100% yodlandi', 'A deck is 100% learned', 'Набор выучен на 100%'),
-        _ => '',
+  String achievementName(Metric m) => switch (m) {
+        Metric.learnedWords => _t('Yodlangan so\'zlar', 'Words learned', 'Выученные слова'),
+        Metric.streakDays => _t('Kunlik seriya', 'Daily streak', 'Серия дней'),
+        Metric.totalAnswers => _t('Javoblar', 'Answers', 'Ответы'),
+        Metric.blitzBest => _t('Tezkor raund rekordi', 'Speed round record', 'Рекорд быстрого раунда'),
+        Metric.battleWins => _t('Jang g\'alabalari', 'Battle wins', 'Победы в битвах'),
+        Metric.bossWins => _t('Boss g\'alabalari', 'Boss wins', 'Победы над боссом'),
+        Metric.perfectBest => _t('Xatosiz seriya rekordi', 'No-mistake record', 'Рекорд без ошибок'),
+        Metric.decksMastered => _t('100% to\'plamlar', '100% decks', 'Наборы на 100%'),
+        Metric.questsDone => _t('Bajarilgan vazifalar', 'Quests done', 'Выполненные задания'),
+        Metric.level => _t('Daraja', 'Level', 'Уровень'),
       };
+  String get maxTier => _t('Eng yuqori bosqich! 👑', 'Max tier! 👑', 'Максимум! 👑');
+  String get records => _t('Rekordlar', 'Records', 'Рекорды');
+  String get statStreak => _t('kun seriya', 'day streak', 'дней подряд');
+  String get statBosses => _t('boss g\'alabasi', 'boss wins', 'побед над боссом');
+  String get statQuests => _t('vazifa', 'quests', 'заданий');
 
   // ---------------- Settings ----------------
   String get appLanguage => _t('Ilova tili', 'App language', 'Язык приложения');
