@@ -141,7 +141,7 @@ class _StudyScreenState extends State<StudyScreen> {
     if (!mounted) return;
     final card = _current;
     if (card != null && context.read<SettingsProvider>().autoSpeak) {
-      speakWord(context, card.word, quiet: true);
+      speakWord(context, card.word, quiet: true, lang: wordLangOf(context, card.deckId));
     }
   }
 
@@ -208,7 +208,7 @@ class _StudyScreenState extends State<StudyScreen> {
 
   void _speak() {
     final c = _current;
-    if (c != null) speakWord(context, c.word);
+    if (c != null) speakWord(context, c.word, lang: wordLangOf(context, c.deckId));
   }
 
   void _browse(int dir) {

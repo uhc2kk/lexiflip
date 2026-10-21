@@ -3,18 +3,24 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'languages.dart';
+
 class AutofillResult {
   const AutofillResult({
     this.ipa,
     this.primary,
     this.secondary,
     this.example,
+    this.geminiError,
   });
 
   final String? ipa;
   final String? primary;
   final String? secondary;
   final String? example;
+
+  /// Why Gemini failed, if it was tried and failed.
+  final GeminiError? geminiError;
 
   bool get isEmpty =>
       ipa == null && primary == null && secondary == null && example == null;
@@ -27,35 +33,58 @@ class AutofillResult {
         primary: primary ?? other.primary,
         secondary: secondary ?? other.secondary,
         example: example ?? other.example,
+        geminiError: geminiError ?? other.geminiError,
+      );
+
+  AutofillResult withGeminiError(GeminiError? e) => AutofillResult(
+        ipa: ipa,
+        primary: primary,
+        secondary: secondary,
+        example: example,
+        geminiError: e,
       );
 }
 
+/// Reasons Gemini can fail — shown to the user instead of silently
+/// falling back to the free services.
+enum GeminiError { badKey, quota, network, badModel, other }
+
 class AutofillException implements Exception {
-  AutofillException(this.message);
+  AutofillException(this.message, {this.geminiError});
   final String message;
+  final GeminiError? geminiError;
   @override
   String toString() => message;
 }
 
-/// Fetches IPA, 2 translations and 1 example sentence for an English word.
+class _GeminiFailure implements Exception {
+  _GeminiFailure(this.kind, this.detail);
+  final GeminiError kind;
+  final String detail;
+  @override
+  String toString() => detail;
+}
+
+/// Fills reading, 2 translations and an example for a word in ANY language,
+/// using the languages chosen for the deck (nothing is guessed).
 ///
 /// Strategy:
 ///  1. Gemini API (if a key is set in Settings) — does everything in one call.
-///  2. Free Dictionary API (dictionaryapi.dev) — IPA, example, English synonym.
-///  3. MyMemory (free, no key) — translations into the target language.
+///  2. Free Dictionary API (English words only) — IPA, example, synonym.
+///  3. MyMemory (free, no key) — translations. Results written in the wrong
+///     script (e.g. Cyrillic text for Uzbek) are thrown away.
 /// Each step only fills fields the previous ones left empty.
 class AutofillService {
   AutofillService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
-  static const _timeout = Duration(seconds: 12);
+  static const _timeout = Duration(seconds: 15);
 
   void dispose() => _client.close();
 
   Future<AutofillResult> fetch(
     String word, {
-    required String targetLangCode,
-    required String targetLangName,
+    required DeckLangs langs,
     String? geminiKey,
     String geminiModel = 'gemini-2.5-flash',
   }) async {
@@ -64,18 +93,23 @@ class AutofillService {
 
     var result = const AutofillResult();
     final errors = <String>[];
+    GeminiError? gError;
 
     if (geminiKey != null && geminiKey.trim().isNotEmpty) {
       try {
-        result = await _fromGemini(
-            w, targetLangName, geminiKey.trim(), geminiModel.trim());
+        result = await _fromGemini(w, langs, geminiKey.trim(), geminiModel.trim());
+      } on _GeminiFailure catch (e) {
+        gError = e.kind;
+        errors.add('Gemini: ${e.detail}');
       } catch (e) {
+        gError = GeminiError.other;
         errors.add('Gemini: $e');
       }
     }
 
     String? englishSynonym;
-    if (result.ipa == null || result.example == null || result.secondary == null) {
+    if (langs.word == 'en' &&
+        (result.ipa == null || result.example == null || result.secondary == null)) {
       try {
         final dict = await _fromDictionary(w);
         englishSynonym = dict.secondary;
@@ -89,32 +123,45 @@ class AutofillService {
 
     if (result.primary == null || result.secondary == null) {
       try {
-        result = result.fillGapsFrom(await _fromMyMemory(w, targetLangCode));
+        final sameLang = langs.secondary == langs.primary;
+        final first = await _fromMyMemory(w, langs.word, langs.primary);
+        result = result.fillGapsFrom(AutofillResult(
+          primary: first.isNotEmpty ? first[0] : null,
+          secondary: sameLang && first.length > 1 ? first[1] : null,
+        ));
+        if (result.secondary == null && !sameLang && langs.secondary != langs.word) {
+          final second = await _fromMyMemory(w, langs.word, langs.secondary);
+          result = result.fillGapsFrom(
+              AutofillResult(secondary: second.isNotEmpty ? second[0] : null));
+        }
       } catch (e) {
         errors.add('Translation: $e');
       }
     }
 
-    // Still no second translation? Use an English context synonym.
-    if (result.secondary == null && englishSynonym != null) {
-      result = result.fillGapsFrom(
-        AutofillResult(secondary: '≈ $englishSynonym'),
-      );
+    // English deck: the 2nd field can be an English synonym.
+    if (result.secondary == null &&
+        englishSynonym != null &&
+        (langs.secondary == 'en' || langs.secondary == langs.primary)) {
+      result = result.fillGapsFrom(AutofillResult(
+        secondary: langs.secondary == 'en' ? englishSynonym : '≈ $englishSynonym',
+      ));
     }
 
     if (result.isEmpty) {
       throw AutofillException(
         errors.isEmpty ? 'Nothing found for "$w".' : errors.join('\n'),
+        geminiError: gError,
       );
     }
-    return result;
+    return result.withGeminiError(gError);
   }
 
   // ---------------- Gemini ----------------
 
   Future<AutofillResult> _fromGemini(
     String word,
-    String langName,
+    DeckLangs langs,
     String key,
     String model,
   ) async {
@@ -122,39 +169,78 @@ class AutofillService {
       'generativelanguage.googleapis.com',
       '/v1beta/models/${model.isEmpty ? 'gemini-2.5-flash' : model}:generateContent',
     );
-    final prompt = '''
-You are a bilingual lexicographer. For the English word or phrase "$word" return ONLY a JSON object with these keys:
-"ipa": General American IPA transcription between slashes,
-"primary": the most common $langName translation,
-"secondary": a second, different $langName translation or a contextual synonym in $langName,
-"example": one natural English example sentence using "$word" (max 20 words).
-''';
+    final wordName = langEnglishName(langs.word);
+    final p1 = langEnglishName(langs.primary);
+    final p2 = langEnglishName(langs.secondary);
 
-    final res = await _client
-        .post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': key,
-          },
-          body: jsonEncode({
-            'contents': [
-              {
-                'parts': [
-                  {'text': prompt}
-                ]
-              }
-            ],
-            'generationConfig': {
-              'temperature': 0.2,
-              'responseMimeType': 'application/json',
+    final ipaRule = switch (langs.word) {
+      'en' => 'General American IPA transcription between slashes, e.g. /ˈwɔːtər/',
+      'ar' => 'Latin transliteration that follows the harakat exactly: long vowels ā ī ū, '
+          'an apostrophe for ع and ء, h for ح, kh for خ, sh for ش, th for ث, dh for ذ, '
+          'gh for غ, q for ق, shadda doubles the letter, al- assimilates to sun letters '
+          '(ash-shamsu), tanwin becomes an/in/un',
+      _ => 'how to pronounce it: IPA between slashes for Latin-script languages, '
+          'otherwise a standard Latin transliteration',
+    };
+    final secondRule = langs.secondary == langs.word
+        ? 'a close synonym in $p2 (a different word)'
+        : langs.secondary == langs.primary
+            ? 'a second, different $p2 translation or contextual synonym'
+            : 'the most common $p2 translation';
+
+    final prompt = 'You are a bilingual lexicographer. The word or phrase "$word" is $wordName.\n'
+        'Return ONLY a JSON object with these keys:\n'
+        '"ipa": $ipaRule,\n'
+        '"primary": the most common $p1 translation (1-4 words),\n'
+        '"secondary": $secondRule (1-4 words),\n'
+        '"example": one natural $wordName example sentence using "$word" (max 20 words).\n'
+        'Write "primary" strictly in $p1 and "secondary" strictly in $p2.';
+
+    final http.Response res;
+    try {
+      res = await _client
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': key,
             },
-          }),
-        )
-        .timeout(_timeout);
+            body: jsonEncode({
+              'contents': [
+                {
+                  'parts': [
+                    {'text': prompt}
+                  ]
+                }
+              ],
+              'generationConfig': {
+                'temperature': 0.2,
+                'responseMimeType': 'application/json',
+              },
+            }),
+          )
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw _GeminiFailure(GeminiError.network, 'timeout');
+    } catch (e) {
+      throw _GeminiFailure(GeminiError.network, e.toString());
+    }
 
     if (res.statusCode != 200) {
-      throw AutofillException('HTTP ${res.statusCode}');
+      final err = utf8.decode(res.bodyBytes);
+      final GeminiError kind;
+      if (res.statusCode == 429) {
+        kind = GeminiError.quota;
+      } else if (res.statusCode == 401 || res.statusCode == 403) {
+        kind = GeminiError.badKey;
+      } else if (res.statusCode == 404) {
+        kind = GeminiError.badModel;
+      } else if (res.statusCode == 400 && err.toLowerCase().contains('api key')) {
+        kind = GeminiError.badKey;
+      } else {
+        kind = GeminiError.other;
+      }
+      throw _GeminiFailure(kind, 'HTTP ${res.statusCode}');
     }
 
     final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
@@ -167,7 +253,7 @@ You are a bilingual lexicographer. For the English word or phrase "$word" return
         .whereType<Map>()
         .map((p) => (p['text'] ?? '').toString())
         .join();
-    if (text.trim().isEmpty) throw AutofillException('empty response');
+    if (text.trim().isEmpty) throw _GeminiFailure(GeminiError.other, 'empty response');
 
     final cleaned = text
         .replaceAll(RegExp(r'^```(?:json)?', multiLine: true), '')
@@ -175,15 +261,16 @@ You are a bilingual lexicographer. For the English word or phrase "$word" return
         .trim();
     final json = jsonDecode(cleaned) as Map<String, dynamic>;
 
+    final ipa = _nonEmpty(json['ipa']);
     return AutofillResult(
-      ipa: _ipa(_nonEmpty(json['ipa'])),
+      ipa: langs.word == 'en' ? _ipa(ipa) : ipa,
       primary: _nonEmpty(json['primary']),
       secondary: _nonEmpty(json['secondary']),
       example: _nonEmpty(json['example']),
     );
   }
 
-  // ---------------- Free Dictionary API ----------------
+  // ---------------- Free Dictionary API (English only) ----------------
 
   /// Returns ipa, example, and an English synonym in `secondary`.
   Future<AutofillResult> _fromDictionary(String word) async {
@@ -222,10 +309,13 @@ You are a bilingual lexicographer. For the English word or phrase "$word" return
 
   // ---------------- MyMemory translation ----------------
 
-  Future<AutofillResult> _fromMyMemory(String word, String lang) async {
+  /// Distinct translations of [word] from [from] into [to] — only those
+  /// written in the right script for [to].
+  Future<List<String>> _fromMyMemory(String word, String from, String to) async {
+    if (from == to) return const [];
     final uri = Uri.https('api.mymemory.translated.net', '/get', {
       'q': word,
-      'langpair': 'en|$lang',
+      'langpair': '$from|$to',
     });
     final res = await _client.get(uri).timeout(_timeout);
     if (res.statusCode != 200) throw AutofillException('HTTP ${res.statusCode}');
@@ -239,6 +329,7 @@ You are a bilingual lexicographer. For the English word or phrase "$word" return
       if (s.isEmpty || s.length > 60) return;
       if (s.toLowerCase() == word.toLowerCase()) return;
       if (s.toUpperCase().contains('MYMEMORY')) return; // quota warnings
+      if (!matchesScript(s, to)) return; // e.g. Russian text for Uzbek
       if (seen.add(s.toLowerCase())) out.add(s);
     }
 
@@ -246,11 +337,7 @@ You are a bilingual lexicographer. For the English word or phrase "$word" return
     for (final m in (json['matches'] as List? ?? const []).whereType<Map>()) {
       add(m['translation']);
     }
-
-    return AutofillResult(
-      primary: out.isNotEmpty ? out[0] : null,
-      secondary: out.length > 1 ? out[1] : null,
-    );
+    return out;
   }
 
   // ---------------- helpers ----------------

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/gamification.dart';
+import '../services/languages.dart';
 
 /// Word language shown in the 'missing voice' message.
 enum WordScriptName { arabic, russian, english }
@@ -193,7 +194,7 @@ class S {
   // ---------------- Editor ----------------
   String get newWord => _t('Yangi so\'z', 'New word', 'Новое слово');
   String get deck => _t('To\'plam', 'Deck', 'Набор');
-  String get wordLabel => _t('So\'z (inglizcha / arabcha …)', 'Word (English / Arabic …)', 'Слово (англ. / араб. …)');
+  String get wordLabel => _t('So\'z', 'Word', 'Слово');
   String get enterWord => _t('So\'z kiriting', 'Enter a word', 'Введите слово');
   String get autofill => _t('Avto-to\'ldirish', 'Auto-fill', 'Автозаполнение');
   String autofillVia(String source, String lang) =>
@@ -206,6 +207,36 @@ class S {
       'Qisman to\'ldirildi — bo\'sh joylarni o\'zingiz yozing.',
       'Partially filled — complete the empty fields.',
       'Заполнено частично — допишите пустые поля.');
+  // ---- Deck languages ----
+  String get deckLanguages => _t('To\'plam tillari', 'Deck languages', 'Языки набора');
+  String get langWord => _t('So\'z tili', 'Word language', 'Язык слов');
+  String get langPrimary => _t('1-tarjima tili', '1st translation', '1-й перевод');
+  String get langSecondary => _t('2-tarjima tili', '2nd translation', '2-й перевод');
+  String get langSecondaryHint => _t(
+      'So\'z tili bilan bir xil bo\'lsa — sinonim; 1-tarjima bilan bir xil bo\'lsa — boshqa tarjima.',
+      'Same as word language → a synonym; same as 1st → another translation.',
+      'Как язык слов → синоним; как 1-й перевод → другой вариант перевода.');
+  String applyToFolder(String folder) => _t('"$folder" papkasidagi barcha to\'plamlarga',
+      'All decks in "$folder"', 'Все наборы в «$folder»');
+  String get changeLangs => _t('Tillarni o\'zgartirish', 'Change languages', 'Изменить языки');
+  String get langsSaved => _t('Tillar saqlandi', 'Languages saved', 'Языки сохранены');
+  String get defaultLangs => _t('Standart tillar (tili tanlanmagan to\'plamlar uchun)',
+      'Default languages (for decks without their own)', 'Языки по умолчанию (для наборов без своих)');
+  String get viaGemini => _t('Gemini', 'Gemini', 'Gemini');
+  String get viaFree => _t('Bepul lug\'at (Gemini kaliti yo\'q)', 'Free dictionary (no Gemini key)',
+      'Бесплатный словарь (нет ключа Gemini)');
+  String get freeWeakHint => _t(
+      'Gemini kalitisiz faqat tarjima topiladi, o\'qilishi va misol esa faqat inglizcha so\'zlarga. Kalitni Sozlamalarda kiriting.',
+      'Without a Gemini key only translations are found; reading and example only for English. Add the key in Settings.',
+      'Без ключа Gemini находится только перевод; чтение и пример — только для английского. Добавьте ключ в настройках.');
+  String geminiFailed(String reason) => _t('Gemini ishlamadi: $reason.',
+      'Gemini failed: $reason.', 'Gemini не сработал: $reason.');
+  String get gErrBadKey => _t('API kaliti noto\'g\'ri', 'invalid API key', 'неверный API-ключ');
+  String get gErrQuota => _t('bugungi limit tugadi', 'quota exceeded', 'лимит исчерпан');
+  String get gErrNetwork => _t('internet yo\'q yoki javob kelmadi', 'no internet / timeout', 'нет интернета / тайм-аут');
+  String get gErrModel => _t('model nomi noto\'g\'ri', 'wrong model name', 'неверное имя модели');
+  String get gErrOther => _t('noma\'lum xato', 'unknown error', 'неизвестная ошибка');
+
   String get ipaLabel => _t('O\'qilishi / IPA', 'Pronunciation / IPA', 'Произношение / IPA');
   String get primaryLabel => _t('Asosiy tarjima', 'Main translation', 'Основной перевод');
   String get secondaryLabel =>
@@ -480,24 +511,19 @@ class S {
   String get kPronounce => _t('Talaffuz', 'Pronounce', 'Озвучить');
   String get kEsc => _t('Eslatma maydonidan chiqish', 'Leave the mnemonic field', 'Выйти из поля подсказки');
 
-  String targetLangName(String code) => switch (lang) {
-        AppLang.uz => const {
-            'uz': 'O\'zbekcha', 'ru': 'Ruscha', 'ur': 'Urducha', 'tr': 'Turkcha', 'ar': 'Arabcha',
-            'kk': 'Qozoqcha', 'tg': 'Tojikcha', 'hi': 'Hindcha', 'fa': 'Forscha', 'de': 'Nemischa',
-            'fr': 'Fransuzcha', 'es': 'Ispancha', 'zh': 'Xitoycha', 'ja': 'Yaponcha', 'ko': 'Koreyscha',
-          }[code],
-        AppLang.en => const {
-            'uz': 'Uzbek', 'ru': 'Russian', 'ur': 'Urdu', 'tr': 'Turkish', 'ar': 'Arabic',
-            'kk': 'Kazakh', 'tg': 'Tajik', 'hi': 'Hindi', 'fa': 'Persian', 'de': 'German',
-            'fr': 'French', 'es': 'Spanish', 'zh': 'Chinese', 'ja': 'Japanese', 'ko': 'Korean',
-          }[code],
-        AppLang.ru => const {
-            'uz': 'Узбекский', 'ru': 'Русский', 'ur': 'Урду', 'tr': 'Турецкий', 'ar': 'Арабский',
-            'kk': 'Казахский', 'tg': 'Таджикский', 'hi': 'Хинди', 'fa': 'Персидский', 'de': 'Немецкий',
-            'fr': 'Французский', 'es': 'Испанский', 'zh': 'Китайский', 'ja': 'Японский', 'ko': 'Корейский',
-          }[code],
-      } ??
-      code;
+  /// Languages for menus: the 4 main ones (O'zbekcha, English, Ruscha,
+  /// Arabcha) first, then the rest alphabetically in the interface language.
+  List<Language> get orderedLanguages {
+    final rest = kLanguages.skip(4).toList()
+      ..sort((a, b) => targetLangName(a.code).compareTo(targetLangName(b.code)));
+    return [...kLanguages.take(4), ...rest];
+  }
+
+  String targetLangName(String code) {
+    final l = languageByCode(code);
+    if (l == null) return code;
+    return switch (lang) { AppLang.uz => l.uz, AppLang.en => l.en, AppLang.ru => l.ru };
+  }
 
   // ---------------- TTS ----------------
   String missingVoiceTitle(String lang) => _t(

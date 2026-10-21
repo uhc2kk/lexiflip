@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import '../models/deck.dart';
 import '../models/gamification.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
+import '../services/languages.dart';
 import '../services/reminder_service.dart';
 import '../services/tts_service.dart';
 
@@ -242,17 +244,26 @@ Future<void> syncReminder(BuildContext context) async {
   );
 }
 
-/// Speaks [text]; if the device has no voice for its language, explains how
-/// to install one (unless [quiet], used for auto-pronounce).
-Future<void> speakWord(BuildContext context, String text, {bool quiet = false}) async {
-  final result = await context.read<TtsService>().speak(text);
+/// Word language of the deck [deckId] (its own choice or the default).
+String wordLangOf(BuildContext context, String deckId) {
+  final deck = context.read<LibraryProvider>().deckById(deckId);
+  return context.read<SettingsProvider>().langsFor(deck).word;
+}
+
+/// Speaks [text] in [lang] (deck word language); if the device has no voice
+/// for it, explains how to install one (unless [quiet], for auto-pronounce).
+Future<void> speakWord(BuildContext context, String text,
+    {bool quiet = false, String? lang}) async {
+  final result = await context.read<TtsService>().speak(text, lang: lang);
   if (result != SpeakResult.missingVoice || quiet || !context.mounted) return;
   final t = S.of(context);
-  final name = t.voiceLangName(switch (detectScript(text)) {
-    WordScript.arabic => WordScriptName.arabic,
-    WordScript.cyrillic => WordScriptName.russian,
-    WordScript.latin => WordScriptName.english,
-  });
+  final name = lang != null && languageByCode(lang) != null
+      ? t.targetLangName(lang)
+      : t.voiceLangName(switch (detectScript(text)) {
+          WordScript.arabic => WordScriptName.arabic,
+          WordScript.cyrillic => WordScriptName.russian,
+          WordScript.latin => WordScriptName.english,
+        });
   final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   await showDialog<void>(
     context: context,
@@ -263,4 +274,79 @@ Future<void> speakWord(BuildContext context, String text, {bool quiet = false}) 
       actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t.ok))],
     ),
   );
+}
+
+/// Dialog to choose a deck's word / translation languages.
+/// Optionally applies the choice to every deck in the deck's folder.
+Future<bool> editDeckLangs(BuildContext context, Deck deck) async {
+  final t = S.of(context);
+  final lib = context.read<LibraryProvider>();
+  final settings = context.read<SettingsProvider>();
+  final cur = settings.langsFor(deck);
+  var word = cur.word, primary = cur.primary, secondary = cur.secondary;
+  var toFolder = false;
+  final folder = lib.folderById(deck.folderId);
+
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setLocal) {
+        Widget pick(String label, String value, ValueChanged<String> onChanged) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: DropdownMenu<String>(
+                initialSelection: value,
+                expandedInsets: EdgeInsets.zero,
+                menuHeight: 360,
+                label: Text(label),
+                onSelected: (v) {
+                  if (v != null) setLocal(() => onChanged(v));
+                },
+                dropdownMenuEntries: [
+                  for (final l in t.orderedLanguages)
+                    DropdownMenuEntry(value: l.code, label: t.targetLangName(l.code)),
+                ],
+              ),
+            );
+        return AlertDialog(
+          icon: const Icon(Icons.language_rounded),
+          title: Text(t.deckLanguages),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(lib.deckTitle(deck), style: Theme.of(ctx).textTheme.titleSmall),
+                  const SizedBox(height: 16),
+                  pick(t.langWord, word, (v) => word = v),
+                  pick(t.langPrimary, primary, (v) => primary = v),
+                  pick(t.langSecondary, secondary, (v) => secondary = v),
+                  Text(t.langSecondaryHint, style: Theme.of(ctx).textTheme.bodySmall),
+                  if (folder != null)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: toFolder,
+                      onChanged: (v) => setLocal(() => toFolder = v ?? false),
+                      title: Text(t.applyToFolder(folder.name)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t.cancel)),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t.save)),
+          ],
+        );
+      },
+    ),
+  );
+  if (ok != true || !context.mounted) return false;
+  final Iterable<String> ids =
+      toFolder && folder != null ? lib.decksInTree(folder.id).map((d) => d.id) : [deck.id];
+  await lib.setDeckLangs(ids, word: word, primary: primary, secondary: secondary);
+  if (context.mounted) showSnack(context, t.langsSaved);
+  return true;
 }

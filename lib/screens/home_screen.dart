@@ -169,6 +169,8 @@ class _FolderScreenState extends State<FolderScreen> {
       case 'edit':
         final res = await showDeckForm(context, title: t.editDeck, name: d.name, folderId: d.folderId);
         if (res != null) await lib.updateDeck(d, name: res.name, folderId: res.folderId);
+      case 'langs':
+        await editDeckLangs(context, d);
       case 'export':
         await SyncActions.export(context, deck: d);
       case 'delete':
@@ -578,6 +580,7 @@ class _DeckTile extends StatelessWidget {
                 itemBuilder: (_) => [
                   PopupMenuItem(value: 'star', child: Text(deck.starred ? t.unfavourite : t.favouriteDeck)),
                   PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
+                  PopupMenuItem(value: 'langs', child: Text(t.deckLanguages)),
                   PopupMenuItem(value: 'export', child: Text(t.exportJson)),
                   PopupMenuItem(value: 'delete', child: Text(t.delete)),
                 ],

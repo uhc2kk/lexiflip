@@ -315,7 +315,16 @@ class LibraryProvider extends ChangeNotifier {
   // ---------------- Decks ----------------
 
   Future<Deck> createDeck(String name, {String? folderId}) async {
-    final deck = Deck.create(name: name, folderId: folderId, order: _nextDeckOrder(folderId));
+    var deck = Deck.create(name: name, folderId: folderId, order: _nextDeckOrder(folderId));
+    // A new deck takes the languages of its neighbours in the same folder.
+    final sibling = _decks.where((d) => d.folderId == folderId && d.hasLangs).firstOrNull;
+    if (folderId != null && sibling != null) {
+      deck = deck.copyWith(
+        wordLang: sibling.wordLang,
+        primaryLang: sibling.primaryLang,
+        secondaryLang: sibling.secondaryLang,
+      );
+    }
     await _deckBox.put(deck.id, deck);
     _reload();
     notifyListeners();
@@ -328,6 +337,19 @@ class LibraryProvider extends ChangeNotifier {
         ? deck.copyWith(name: name, clearFolder: true, order: moved ? _nextDeckOrder(null) : null)
         : deck.copyWith(name: name, folderId: folderId, order: moved ? _nextDeckOrder(folderId) : null);
     await _deckBox.put(deck.id, updated);
+    _reload();
+    notifyListeners();
+  }
+
+  /// Sets the word / translation languages of the given decks.
+  Future<void> setDeckLangs(Iterable<String> deckIds,
+      {required String word, required String primary, required String secondary}) async {
+    for (final id in deckIds) {
+      final d = deckById(id);
+      if (d == null) continue;
+      await _deckBox.put(
+          d.id, d.copyWith(wordLang: word, primaryLang: primary, secondaryLang: secondary));
+    }
     _reload();
     notifyListeners();
   }
@@ -487,6 +509,17 @@ class LibraryProvider extends ChangeNotifier {
               )
             : Deck.create(name: imp.name, folderId: folderId, order: _nextDeckOrder(folderId));
         await _deckBox.put(target.id, target);
+        _reload();
+      }
+      if (imp.wordLang != null || imp.primaryLang != null || imp.secondaryLang != null) {
+        await _deckBox.put(
+          target.id,
+          target.copyWith(
+            wordLang: imp.wordLang,
+            primaryLang: imp.primaryLang,
+            secondaryLang: imp.secondaryLang,
+          ),
+        );
         _reload();
       }
       final (toWrite, result) =

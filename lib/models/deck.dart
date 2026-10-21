@@ -11,6 +11,9 @@ class Deck {
     this.order = 0,
     this.legacyFolder = '',
     this.starred = false,
+    this.wordLang,
+    this.primaryLang,
+    this.secondaryLang,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -38,6 +41,13 @@ class Deck {
   /// ⭐ favourite deck — shown at the top of the home page.
   final bool starred;
 
+  /// Languages chosen for this deck (ISO codes). null → app defaults.
+  final String? wordLang;
+  final String? primaryLang;
+  final String? secondaryLang;
+
+  bool get hasLangs => wordLang != null || primaryLang != null || secondaryLang != null;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -48,6 +58,9 @@ class Deck {
     int? order,
     bool clearLegacy = false,
     bool? starred,
+    String? wordLang,
+    String? primaryLang,
+    String? secondaryLang,
   }) =>
       Deck(
         id: id,
@@ -56,6 +69,9 @@ class Deck {
         order: order ?? this.order,
         legacyFolder: clearLegacy ? '' : legacyFolder,
         starred: starred ?? this.starred,
+        wordLang: wordLang ?? this.wordLang,
+        primaryLang: primaryLang ?? this.primaryLang,
+        secondaryLang: secondaryLang ?? this.secondaryLang,
         createdAt: createdAt,
         updatedAt: DateTime.now().toUtc(),
       );
@@ -67,6 +83,9 @@ class Deck {
         'order': order,
         if (legacyFolder.isNotEmpty) 'folder': legacyFolder,
         if (starred) 'starred': true,
+        if (wordLang != null) 'wordLang': wordLang,
+        if (primaryLang != null) 'primaryLang': primaryLang,
+        if (secondaryLang != null) 'secondaryLang': secondaryLang,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'updatedAt': updatedAt.toUtc().toIso8601String(),
       };
@@ -76,6 +95,11 @@ class Deck {
         DateTime.tryParse((json[k] ?? '').toString())?.toUtc() ?? DateTime.now().toUtc();
     final id = (json['id'] ?? '').toString();
     final fid = (json['folderId'] ?? '').toString();
+    String? lang(String k) {
+      final v = (json[k] ?? '').toString().trim();
+      return v.isEmpty ? null : v;
+    }
+
     return Deck(
       id: id.isEmpty ? const Uuid().v4() : id,
       name: (json['name'] ?? '').toString().trim(),
@@ -83,6 +107,9 @@ class Deck {
       order: int.tryParse((json['order'] ?? '0').toString()) ?? 0,
       legacyFolder: (json['folder'] ?? '').toString().trim(),
       starred: json['starred'] == true,
+      wordLang: lang('wordLang'),
+      primaryLang: lang('primaryLang'),
+      secondaryLang: lang('secondaryLang'),
       createdAt: date('createdAt'),
       updatedAt: date('updatedAt'),
     );

@@ -61,52 +61,72 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     super.dispose();
   }
 
-  // ---------------- Auto-fill (English words) ----------------
+  // ---------------- Auto-fill (any language, deck languages) ----------------
+
+  String _gErr(S t, GeminiError e) => switch (e) {
+        GeminiError.badKey => t.gErrBadKey,
+        GeminiError.quota => t.gErrQuota,
+        GeminiError.network => t.gErrNetwork,
+        GeminiError.badModel => t.gErrModel,
+        GeminiError.other => t.gErrOther,
+      };
 
   Future<void> _autofill({bool onlyIfEmpty = false}) async {
     final word = _word.text.trim();
     if (word.isEmpty || _loading) return;
     final t = S.of(context);
-    if (detectScript(word) == WordScript.arabic) {
-      // Offline: generate the Latin reading from the harakat.
-      if (!onlyIfEmpty || _ipa.text.isEmpty) _ipa.text = arabicToLatin(word);
-      if (!onlyIfEmpty) showSnack(context, t.readingFilled);
-      return;
-    }
-    if (detectScript(word) != WordScript.latin) {
-      if (!onlyIfEmpty) showSnack(context, t.autofillEnglishOnly);
-      return;
-    }
+    final settings = context.read<SettingsProvider>();
+    final langs = settings.langsFor(context.read<LibraryProvider>().deckById(_deckId));
+
     if (onlyIfEmpty &&
         (_ipa.text.isNotEmpty || _primary.text.isNotEmpty || _example.text.isNotEmpty)) {
       return;
     }
 
-    final settings = context.read<SettingsProvider>();
-    final service = context.read<AutofillService>();
+    // Arabic: the reading is generated offline, exactly from the harakat.
+    final arabic = langs.word == 'ar' || detectScript(word) == WordScript.arabic;
+    if (arabic && _ipa.text.isEmpty) _ipa.text = arabicToLatin(word);
 
+    final service = context.read<AutofillService>();
     setState(() => _loading = true);
     try {
       final r = await service.fetch(
         word,
-        targetLangCode: settings.targetLang,
-        targetLangName: settings.targetLangName,
+        langs: langs,
         geminiKey: settings.geminiKey,
         geminiModel: settings.geminiModel,
       );
       if (!mounted) return;
-      if (r.ipa != null) _ipa.text = r.ipa!;
+      if (r.ipa != null && !(arabic && _ipa.text.isNotEmpty)) _ipa.text = r.ipa!;
       if (r.primary != null) _primary.text = r.primary!;
       if (r.secondary != null) _secondary.text = r.secondary!;
       if (r.example != null) _example.text = r.example!;
-      if (!r.isComplete) {
-        showSnack(context, t.autofillPartial);
+      final complete = [_ipa, _primary, _secondary, _example].every((c) => c.text.isNotEmpty);
+      if (r.geminiError != null) {
+        showSnack(context, t.geminiFailed(_gErr(t, r.geminiError!)));
+      } else if (!complete) {
+        showSnack(context, settings.hasGemini ? t.autofillPartial : t.freeWeakHint);
+      }
+    } on AutofillException catch (e) {
+      if (!mounted) return;
+      if (e.geminiError != null) {
+        showSnack(context, t.geminiFailed(_gErr(t, e.geminiError!)));
+      } else if (arabic && _ipa.text.isNotEmpty) {
+        showSnack(context, t.readingFilled);
+      } else {
+        showSnack(context, '${t.autofill}: $e');
       }
     } catch (e) {
       if (mounted) showSnack(context, '${t.autofill}: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _editLangs() async {
+    final deck = context.read<LibraryProvider>().deckById(_deckId);
+    if (deck == null) return;
+    await editDeckLangs(context, deck);
   }
 
   // ---------------- Save / delete ----------------
@@ -179,6 +199,8 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     final lib = context.watch<LibraryProvider>();
     final settings = context.watch<SettingsProvider>();
     final t = S.of(context);
+    final langs = settings.langsFor(lib.deckById(_deckId));
+    String ln(String code) => t.targetLangName(code);
 
     InputDecoration deco(String label, {String? hint, IconData? icon}) => InputDecoration(
           labelText: label,
@@ -232,7 +254,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                   textInputAction: TextInputAction.search,
                   onFieldSubmitted: (_) => _autofill(onlyIfEmpty: true),
                   validator: (v) => (v == null || v.trim().isEmpty) ? t.enterWord : null,
-                  decoration: deco(t.wordLabel, icon: Icons.translate_rounded)
+                  decoration: deco('${t.wordLabel} · ${ln(langs.word)}', icon: Icons.translate_rounded)
                       .copyWith(
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -240,7 +262,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                         IconButton(
                           tooltip: t.kPronounce,
                           icon: const Icon(Icons.volume_up_outlined),
-                          onPressed: () => speakWord(context, _word.text),
+                          onPressed: () => speakWord(context, _word.text, lang: langs.word),
                         ),
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
@@ -264,13 +286,30 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 18),
-                  child: Text(
-                    t.autofillVia(
-                      settings.hasGemini ? 'Gemini' : 'Free Dictionary + MyMemory',
-                      t.targetLangName(settings.targetLang),
-                    ),
-                    style: Theme.of(context).textTheme.bodySmall,
+                  padding: const EdgeInsets.fromLTRB(0, 10, 0, 18),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.language_rounded, size: 18),
+                        tooltip: t.changeLangs,
+                        onPressed: _editLangs,
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('${ln(langs.word)}  →  ${ln(langs.primary)} · ${ln(langs.secondary)}'),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.edit_outlined, size: 16),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '${t.autofill}: ${settings.hasGemini ? t.viaGemini : t.viaFree}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
                 ),
                 TextFormField(
@@ -281,12 +320,12 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _primary,
-                  decoration: deco(t.primaryLabel, icon: Icons.looks_one_outlined),
+                  decoration: deco('${t.primaryLabel} · ${ln(langs.primary)}', icon: Icons.looks_one_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _secondary,
-                  decoration: deco(t.secondaryLabel, icon: Icons.looks_two_outlined),
+                  decoration: deco('${t.secondaryLabel} · ${ln(langs.secondary)}', icon: Icons.looks_two_outlined),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(

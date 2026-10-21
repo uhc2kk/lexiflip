@@ -12,9 +12,21 @@ import '../models/flashcard.dart';
 /// single-deck files) — the UI then asks the user for a name & folder.
 /// [folderPath] is up to 2 folder names, e.g. ["Arabcha", "Kitob 1"].
 class ImportedDeck {
-  ImportedDeck({this.id, required this.name, List<String>? folderPath, required this.cards})
-      : folderPath = folderPath ?? [];
+  ImportedDeck({
+    this.id,
+    required this.name,
+    List<String>? folderPath,
+    required this.cards,
+    this.wordLang,
+    this.primaryLang,
+    this.secondaryLang,
+  }) : folderPath = folderPath ?? [];
   final String? id;
+
+  /// Optional deck languages from the file ("wordLang": "ar" …).
+  final String? wordLang;
+  final String? primaryLang;
+  final String? secondaryLang;
   String name;
   List<String> folderPath;
 
@@ -22,6 +34,11 @@ class ImportedDeck {
   String? targetFolderId;
   bool targetRoot = false;
   final List<Flashcard> cards;
+}
+
+String? _lang(Map d, String key) {
+  final v = (d[key] ?? '').toString().trim();
+  return v.isEmpty ? null : v;
 }
 
 List<String> _path(Map d) {
@@ -98,6 +115,9 @@ class JsonSyncService {
             'name': d.name,
             'folder': pathOf(d).join(' / '),
             'folderPath': pathOf(d),
+            if (d.wordLang != null) 'wordLang': d.wordLang,
+            if (d.primaryLang != null) 'primaryLang': d.primaryLang,
+            if (d.secondaryLang != null) 'secondaryLang': d.secondaryLang,
             'count': byDeck[d.id]?.length ?? 0,
             'cards': [for (final c in byDeck[d.id] ?? const []) c.toJson()],
           },
@@ -132,6 +152,9 @@ class JsonSyncService {
             name: (d['name'] ?? fallbackName).toString().trim(),
             folderPath: _path(d),
             cards: _cards(d['cards'] is List ? d['cards'] as List : const []),
+            wordLang: _lang(d, 'wordLang'),
+            primaryLang: _lang(d, 'primaryLang'),
+            secondaryLang: _lang(d, 'secondaryLang'),
           ),
       ];
     }

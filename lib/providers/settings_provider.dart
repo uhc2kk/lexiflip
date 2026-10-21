@@ -1,27 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
+import '../models/deck.dart';
+import '../services/languages.dart';
 import '../services/storage_service.dart';
-
-/// Target languages offered for auto-fill translations (code -> name).
-const Map<String, String> kTargetLanguages = {
-  'uz': 'Uzbek',
-  'ru': 'Russian',
-  'ur': 'Urdu',
-  'tr': 'Turkish',
-  'ar': 'Arabic',
-  'kk': 'Kazakh',
-  'tg': 'Tajik',
-  'hi': 'Hindi',
-  'fa': 'Persian',
-  'de': 'German',
-  'fr': 'French',
-  'es': 'Spanish',
-  'zh': 'Chinese',
-  'ja': 'Japanese',
-  'ko': 'Korean',
-};
-
 
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider() {
@@ -34,6 +16,8 @@ class SettingsProvider extends ChangeNotifier {
     _themeMode = ThemeMode.values[
         get<int>('themeMode', ThemeMode.system.index).clamp(0, ThemeMode.values.length - 1)];
     _targetLang = get<String>('targetLang', 'uz');
+    _wordLang = get<String>('wordLang', 'en');
+    _secondaryLang = get<String>('secondaryLang', _targetLang);
     _geminiKey = get<String>('geminiKey', '');
     _geminiModel = get<String>('geminiModel', 'gemini-2.5-flash');
     _showPronunciation = get<bool>('showPronunciation', true);
@@ -102,6 +86,8 @@ class SettingsProvider extends ChangeNotifier {
 
   late ThemeMode _themeMode;
   late String _targetLang;
+  late String _wordLang;
+  late String _secondaryLang;
   late String _geminiKey;
   late String _geminiModel;
   late bool _showPronunciation;
@@ -111,8 +97,19 @@ class SettingsProvider extends ChangeNotifier {
   late int _dailyGoal;
 
   ThemeMode get themeMode => _themeMode;
+  /// Default languages for decks that have none chosen yet.
   String get targetLang => _targetLang;
-  String get targetLangName => kTargetLanguages[_targetLang] ?? _targetLang;
+  String get wordLang => _wordLang;
+  String get secondaryLang => _secondaryLang;
+  DeckLangs get defaultLangs =>
+      DeckLangs(word: _wordLang, primary: _targetLang, secondary: _secondaryLang);
+
+  /// Languages for [deck]: its own choice, or the defaults.
+  DeckLangs langsFor(Deck? deck) => DeckLangs(
+        word: deck?.wordLang ?? _wordLang,
+        primary: deck?.primaryLang ?? _targetLang,
+        secondary: deck?.secondaryLang ?? _secondaryLang,
+      );
   String get geminiKey => _geminiKey;
   String get geminiModel => _geminiModel;
   bool get hasGemini => _geminiKey.trim().isNotEmpty;
@@ -138,9 +135,13 @@ class SettingsProvider extends ChangeNotifier {
   void toggleTheme(Brightness current) =>
       setThemeMode(current == Brightness.dark ? ThemeMode.light : ThemeMode.dark);
 
-  void setTargetLang(String code) {
-    _targetLang = code;
-    _put('targetLang', code);
+  void setDefaultLangs({String? word, String? primary, String? secondary}) {
+    _wordLang = word ?? _wordLang;
+    _targetLang = primary ?? _targetLang;
+    _secondaryLang = secondary ?? _secondaryLang;
+    _put('wordLang', _wordLang);
+    _put('targetLang', _targetLang);
+    _put('secondaryLang', _secondaryLang);
     notifyListeners();
   }
 

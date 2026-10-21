@@ -108,7 +108,7 @@ class CardFront extends StatelessWidget {
           IconButton.filledTonal(
             tooltip: S.of(context).pronounce,
             iconSize: 28,
-            onPressed: () => speakWord(context, card.word),
+            onPressed: () => speakWord(context, card.word, lang: wordLangOf(context, card.deckId)),
             icon: const Icon(Icons.volume_up_rounded),
           ),
         ],

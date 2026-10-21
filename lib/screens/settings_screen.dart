@@ -175,18 +175,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               header(t.autofillSection),
-              DropdownMenu<String>(
-                initialSelection: s.targetLang,
-                expandedInsets: EdgeInsets.zero,
-                label: Text(t.translateInto),
-                onSelected: (v) {
-                  if (v != null) s.setTargetLang(v);
-                },
-                dropdownMenuEntries: [
-                  for (final code in kTargetLanguages.keys)
-                    DropdownMenuEntry(value: code, label: t.targetLangName(code)),
-                ],
-              ),
+              Text(t.defaultLangs, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 10),
+              for (final (label, value, apply) in <(String, String, void Function(String))>[
+                (t.langWord, s.wordLang, (v) => s.setDefaultLangs(word: v)),
+                (t.langPrimary, s.targetLang, (v) => s.setDefaultLangs(primary: v)),
+                (t.langSecondary, s.secondaryLang, (v) => s.setDefaultLangs(secondary: v)),
+              ])
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: DropdownMenu<String>(
+                    key: ValueKey('$label-$value'),
+                    initialSelection: value,
+                    expandedInsets: EdgeInsets.zero,
+                    menuHeight: 360,
+                    label: Text(label),
+                    onSelected: (v) {
+                      if (v != null) apply(v);
+                    },
+                    dropdownMenuEntries: [
+                      for (final l in t.orderedLanguages)
+                        DropdownMenuEntry(value: l.code, label: t.targetLangName(l.code)),
+                    ],
+                  ),
+                ),
+              Text(t.langSecondaryHint, style: theme.textTheme.bodySmall),
               const SizedBox(height: 16),
               Text(t.geminiInfo, style: theme.textTheme.bodySmall),
               const SizedBox(height: 12),

@@ -65,6 +65,16 @@ class TtsService {
     return _voices!;
   }
 
+  /// The deck language wins, unless the text is plainly in another script
+  /// (e.g. an Arabic word in a deck marked English).
+  static String _prefixForText(String text, String? lang) {
+    final script = detectScript(text);
+    if (lang == null || lang.isEmpty) return _prefixFor(script);
+    if (script == WordScript.arabic && !const {'ar', 'fa', 'ur'}.contains(lang)) return 'ar';
+    if (script == WordScript.cyrillic && !const {'ru', 'kk', 'ky', 'tg'}.contains(lang)) return 'ru';
+    return lang;
+  }
+
   static String _prefixFor(WordScript s) => switch (s) {
         WordScript.arabic => 'ar',
         WordScript.cyrillic => 'ru',
@@ -74,7 +84,13 @@ class TtsService {
   static String _defaultLocale(String prefix) => switch (prefix) {
         'ar' => 'ar-SA',
         'ru' => 'ru-RU',
-        _ => 'en-US',
+        'en' => 'en-US',
+        'tr' => 'tr-TR',
+        'de' => 'de-DE',
+        'fr' => 'fr-FR',
+        'es' => 'es-ES',
+        'it' => 'it-IT',
+        _ => prefix,
       };
 
   /// Chooses a voice for [prefix]. Returns false if the device has voices
@@ -115,11 +131,13 @@ class TtsService {
     _lang = null;
   }
 
-  Future<SpeakResult> speak(String text) async {
+  /// [lang] = the deck's word language (ISO code). Without it the voice is
+  /// chosen from the script (Arabic / Cyrillic / Latin → English).
+  Future<SpeakResult> speak(String text, {String? lang}) async {
     if (text.trim().isEmpty) return SpeakResult.ok;
     try {
       await _init();
-      final prefix = _prefixFor(detectScript(text));
+      final prefix = _prefixForText(text, lang);
       if (!await _useLanguage(prefix)) {
         refreshVoices(); // check again next time — user may install it
         return SpeakResult.missingVoice;
