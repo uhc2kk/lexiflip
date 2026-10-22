@@ -44,6 +44,29 @@ class SyncActions {
   ///  - LexiFlip exports carry deck id + folder path → go straight in.
   ///  - Other files: asks for a deck name and folder ([intoFolderId] or
   ///    the file's folder path is pre-selected).
+  /// Import from inside a book: all words in the file go into [deckId].
+  static Future<void> importIntoBook(BuildContext context, String deckId) async {
+    final lib = context.read<LibraryProvider>();
+    final t = S.of(context);
+    try {
+      final incoming = await JsonSyncService.pickAndDecode();
+      if (!context.mounted || incoming == null) return;
+      final words = incoming.fold<int>(0, (n, d) => n + d.cards.length);
+      if (words == 0) {
+        showSnack(context, t.noWordsInFile);
+        return;
+      }
+      final result = await lib.importIntoBook(deckId, incoming);
+      if (context.mounted) {
+        showSnack(context, t.importDone(result.added, result.updated, result.skipped));
+      }
+    } on FormatException {
+      if (context.mounted) showSnack(context, t.invalidFile);
+    } catch (e) {
+      if (context.mounted) showSnack(context, t.importError(e));
+    }
+  }
+
   static Future<void> import(BuildContext context, {String? intoFolderId}) async {
     final lib = context.read<LibraryProvider>();
     final t = S.of(context);

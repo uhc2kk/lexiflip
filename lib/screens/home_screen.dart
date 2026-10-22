@@ -55,6 +55,8 @@ Future<void> _bookAction(BuildContext context, Deck d, String action) async {
       await editDeckLangs(context, d);
     case 'pdf':
       _push(context, PdfImportScreen(deckId: d.id));
+    case 'json':
+      await SyncActions.importIntoBook(context, d.id);
     case 'export':
       await SyncActions.export(context, deck: d);
     case 'delete':
@@ -69,6 +71,7 @@ List<PopupMenuEntry<String>> _bookMenu(S t, Deck d) => [
       PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
       PopupMenuItem(value: 'langs', child: Text(t.deckLanguages)),
       PopupMenuItem(value: 'pdf', child: Text(t.pdfImport)),
+      PopupMenuItem(value: 'json', child: Text(t.importIntoBook)),
       PopupMenuItem(value: 'export', child: Text(t.exportJson)),
       PopupMenuItem(value: 'delete', child: Text(t.delete)),
     ];

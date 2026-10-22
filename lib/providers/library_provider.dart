@@ -490,6 +490,22 @@ class LibraryProvider extends ChangeNotifier {
   ///  - Files with folderPath [language, book] (lessons): every lesson is
   ///    merged into ONE book named after the 2nd level.
   ///  - Otherwise the book is matched by language + name, or created.
+  /// Puts every word from the file into ONE existing book (import from
+  /// inside a book). Books/languages named in the file are ignored;
+  /// words already in the book are merged, not duplicated.
+  Future<MergeResult> importIntoBook(String deckId, List<ImportedDeck> incoming) async {
+    final total = MergeResult();
+    if (deckById(deckId) == null) return total;
+    for (final imp in incoming) {
+      final (toWrite, result) = JsonSyncService.merge(deckId, cardsOf(deckId), _cards, imp.cards);
+      await _cardBox.putAll({for (final c in toWrite) c.id: c});
+      _reload();
+      total.addAll(result);
+    }
+    notifyListeners();
+    return total;
+  }
+
   Future<MergeResult> importDecks(List<ImportedDeck> incoming) async {
     final total = MergeResult();
     for (final imp in incoming) {

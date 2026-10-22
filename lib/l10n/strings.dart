@@ -529,6 +529,8 @@ class S {
       'Все языки, книги, слова, XP и статистика будут удалены. Настройки сохранятся. Это необратимо.');
   String get resetDone => _t('Hammasi tozalandi', 'Everything was deleted', 'Всё удалено');
 
+  String get importIntoBook => _t('Shu kitobga JSON import', 'Import JSON into this book', 'Импорт JSON в эту книгу');
+
   // ---------------- Settings ----------------
   String get appLanguage => _t('Ilova tili', 'App language', 'Язык приложения');
   String get cardDisplay => _t('Karta ko\'rinishi', 'Card display', 'Вид карточки');

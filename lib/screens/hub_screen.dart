@@ -64,6 +64,8 @@ class _HubScreenState extends State<HubScreen> {
     switch (v) {
       case 'quick':
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => QuickAddScreen(deckId: _src.id)));
+      case 'json':
+        await SyncActions.importIntoBook(context, _src.id);
       case 'pdf':
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => PdfImportScreen(deckId: _src.id)));
       case 'langs':
@@ -177,6 +179,10 @@ class _HubScreenState extends State<HubScreen> {
                   child: ListTile(leading: const Icon(Icons.playlist_add_rounded), title: Text(t.quickAdd)),
                 ),
                 PopupMenuItem(
+                  value: 'json',
+                  child: ListTile(leading: const Icon(Icons.download_rounded), title: Text(t.importIntoBook)),
+                ),
+                PopupMenuItem(
                   value: 'pdf',
                   child: ListTile(leading: const Icon(Icons.picture_as_pdf_rounded), title: Text(t.pdfImport)),
                 ),
@@ -276,10 +282,34 @@ class _HubScreenState extends State<HubScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: counts.total == 0 && _isDeck
-                        ? FilledButton.icon(
-                            onPressed: _addCard,
-                            icon: const Icon(Icons.add_rounded),
-                            label: Text(t.firstWord),
+                        ? Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            alignment: WrapAlignment.center,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: _addCard,
+                                icon: const Icon(Icons.add_rounded),
+                                label: Text(t.firstWord),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => SyncActions.importIntoBook(context, _src.id),
+                                icon: const Icon(Icons.download_rounded),
+                                label: Text(t.importIntoBook),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (_) => QuickAddScreen(deckId: _src.id))),
+                                icon: const Icon(Icons.playlist_add_rounded),
+                                label: Text(t.quickAdd),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (_) => PdfImportScreen(deckId: _src.id))),
+                                icon: const Icon(Icons.picture_as_pdf_rounded),
+                                label: Text(t.pdfImport),
+                              ),
+                            ],
                           )
                         : Text(_src.kind == SourceKind.starred && counts.total == 0 ? t.starredEmpty : t.nothingFound,
                             textAlign: TextAlign.center),
