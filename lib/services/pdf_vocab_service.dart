@@ -106,13 +106,16 @@ Return ONLY a JSON array:
       throw PdfVocabException('$e');
     }
 
-    final body = _tryJson(utf8.decode(res.bodyBytes, allowMalformed: true));
+    final decoded = _tryJson(utf8.decode(res.bodyBytes, allowMalformed: true));
+    final Map body = decoded is Map ? decoded : const {};
     if (res.statusCode != 200) {
-      final msg = (body is Map ? (body['error'] as Map?)?['message'] : null) ?? 'HTTP ${res.statusCode}';
+      final err = body['error'];
+      final msg = (err is Map ? err['message'] : null) ?? 'HTTP ${res.statusCode}';
       throw PdfVocabException(msg.toString());
     }
 
-    final candidates = (body is Map ? body['candidates'] : null) as List? ?? const [];
+    final raw = body['candidates'];
+    final List candidates = raw is List ? raw : const [];
     if (candidates.isEmpty) throw PdfVocabException('Empty response');
     final first = candidates.first as Map;
     final finish = (first['finishReason'] ?? '').toString();
