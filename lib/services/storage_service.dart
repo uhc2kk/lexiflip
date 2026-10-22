@@ -28,8 +28,30 @@ class StorageService {
     await Hive.openBox<Folder>(foldersBoxName);
     await Hive.openBox(settingsBoxName);
     await Hive.openBox(statsBoxName);
+    await _resetForV3();
     await _migrateOrphanCards();
     await _migrateLegacyFolders();
+  }
+
+  /// v3 (Til → Kitob): the user chose a clean start — old folders, decks,
+  /// cards and stats are removed once. Settings are kept.
+  static const _schema = 3;
+  static Future<void> _resetForV3() async {
+    final v = (settings.get('schema', defaultValue: 0) as num).toInt();
+    if (v >= _schema) return;
+    await cards.clear();
+    await decks.clear();
+    await folders.clear();
+    await stats.clear();
+    await settings.put('schema', _schema);
+  }
+
+  /// "Barcha ma'lumotlarni o'chirish" in Settings.
+  static Future<void> wipeLibrary() async {
+    await cards.clear();
+    await decks.clear();
+    await folders.clear();
+    await stats.clear();
   }
 
   static Box<Flashcard> get cards => Hive.box<Flashcard>(cardsBoxName);

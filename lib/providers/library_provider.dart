@@ -300,16 +300,18 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Finds (or creates) the folder for a path like ["Arabcha", "Kitob 1"].
-  Future<String?> ensureFolderPath(List<String> path) async {
-    String? parentId;
-    for (final name in path.take(2)) {
-      final existing = subfolders(parentId)
-          .where((f) => f.name.toLowerCase() == name.toLowerCase())
-          .firstOrNull;
-      parentId = existing?.id ?? (await createFolder(name, parentId: parentId)).id;
-    }
-    return parentId;
+  /// Finds (or creates) a language (top-level folder) by name.
+  Future<String> ensureLanguage(String name) async {
+    final n = name.trim().isEmpty ? 'Import' : name.trim();
+    final existing = subfolders(null).where((f) => f.name.toLowerCase() == n.toLowerCase()).firstOrNull;
+    return existing?.id ?? (await createFolder(n)).id;
+  }
+
+  /// Clears every language, book, word and statistic.
+  Future<void> wipeAll() async {
+    await StorageService.wipeLibrary();
+    _reload();
+    notifyListeners();
   }
 
   // ---------------- Decks ----------------
@@ -483,31 +485,41 @@ class LibraryProvider extends ChangeNotifier {
 
   // ---------------- Import ----------------
 
-  /// A deck with the same id, or the same folder + name, is merged into;
-  /// otherwise a new deck is created (folders from the file are created too).
+  /// Imports books.
+  ///  - LexiFlip exports: folderPath = [language], deck id → merged by id.
+  ///  - Files with folderPath [language, book] (lessons): every lesson is
+  ///    merged into ONE book named after the 2nd level.
+  ///  - Otherwise the book is matched by language + name, or created.
   Future<MergeResult> importDecks(List<ImportedDeck> incoming) async {
     final total = MergeResult();
     for (final imp in incoming) {
-      final String? folderId = imp.targetRoot
-          ? null
-          : imp.targetFolderId ?? await ensureFolderPath(imp.folderPath);
+      var bookName = imp.name;
+      String? matchId = imp.id;
+      String? langId = imp.targetFolderId;
+      if (langId == null) {
+        langId = await ensureLanguage(imp.folderPath.isEmpty ? 'Import' : imp.folderPath.first);
+        if (imp.folderPath.length >= 2) {
+          bookName = imp.folderPath[1];
+          matchId = null;
+        }
+      }
 
-      Deck? target = imp.id == null ? null : deckById(imp.id!);
+      Deck? target = matchId == null ? null : deckById(matchId);
       target ??= _decks
-          .where((d) => d.folderId == folderId && d.name.toLowerCase() == imp.name.toLowerCase())
+          .where((d) => d.folderId == langId && d.name.toLowerCase() == bookName.toLowerCase())
           .firstOrNull;
       if (target == null) {
         final now = DateTime.now().toUtc();
-        target = imp.id != null
+        target = matchId != null
             ? Deck(
-                id: imp.id!,
-                name: imp.name,
-                folderId: folderId,
-                order: _nextDeckOrder(folderId),
+                id: matchId,
+                name: bookName,
+                folderId: langId,
+                order: _nextDeckOrder(langId),
                 createdAt: now,
                 updatedAt: now,
               )
-            : Deck.create(name: imp.name, folderId: folderId, order: _nextDeckOrder(folderId));
+            : Deck.create(name: bookName, folderId: langId, order: _nextDeckOrder(langId));
         await _deckBox.put(target.id, target);
         _reload();
       }

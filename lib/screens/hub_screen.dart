@@ -8,6 +8,7 @@ import '../providers/stats_provider.dart';
 import '../widgets/word_style.dart';
 import 'card_editor_screen.dart';
 import 'home_screen.dart' show BucketBar, BucketColors;
+import 'pdf_import_screen.dart';
 import 'quick_add_screen.dart';
 import 'study_screen.dart';
 import '../widgets/progress_chart.dart';
@@ -61,6 +62,13 @@ class _HubScreenState extends State<HubScreen> {
     final t = S.of(context);
     final lib = context.read<LibraryProvider>();
     switch (v) {
+      case 'quick':
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => QuickAddScreen(deckId: _src.id)));
+      case 'pdf':
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => PdfImportScreen(deckId: _src.id)));
+      case 'langs':
+        final deck = lib.deckById(_src.id);
+        if (deck != null) await editDeckLangs(context, deck);
       case 'edit':
         final deck = lib.deckById(_src.id);
         if (deck == null) return;
@@ -158,19 +166,23 @@ class _HubScreenState extends State<HubScreen> {
                   color: lib.deckById(_src.id)!.starred ? const Color(0xFFF5B301) : null),
               onPressed: () => lib.toggleDeckStar(_src.id),
             ),
-            IconButton(
-              tooltip: t.quickAdd,
-              icon: const Icon(Icons.playlist_add_rounded),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => QuickAddScreen(deckId: _src.id),
-              )),
-            ),
             IconButton(tooltip: t.addWord, icon: const Icon(Icons.add_rounded), onPressed: _addCard),
           ],
           PopupMenuButton<String>(
             onSelected: _menu,
             itemBuilder: (_) => [
-              if (_isDeck) PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
+              if (_isDeck) ...[
+                PopupMenuItem(
+                  value: 'quick',
+                  child: ListTile(leading: const Icon(Icons.playlist_add_rounded), title: Text(t.quickAdd)),
+                ),
+                PopupMenuItem(
+                  value: 'pdf',
+                  child: ListTile(leading: const Icon(Icons.picture_as_pdf_rounded), title: Text(t.pdfImport)),
+                ),
+                PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
+                PopupMenuItem(value: 'langs', child: Text(t.deckLanguages)),
+              ],
               if (_isDeck || _src.kind == SourceKind.folder)
                 PopupMenuItem(value: 'export', child: Text(t.exportJson)),
               PopupMenuItem(value: 'reset', child: Text(t.resetProgress)),

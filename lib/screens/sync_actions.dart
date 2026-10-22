@@ -57,41 +57,20 @@ class SyncActions {
       }
 
       for (final d in incoming) {
-        if (d.id != null) continue;
-        // Pre-select: the folder we're in, or the file's folder if it exists.
-        String? preselect = intoFolderId;
-        if (preselect == null && d.folderPath.isNotEmpty) {
-          String? parent;
-          for (final name in d.folderPath) {
-            parent = lib
-                .subfolders(parent)
-                .where((f) => f.name.toLowerCase() == name.toLowerCase())
-                .firstOrNull
-                ?.id;
-            if (parent == null) break;
-          }
-          preselect = parent;
-        }
-        final fileFolder = d.folderPath.join(' › ');
+        // Files that say which language (folderPath) or come from a
+        // LexiFlip export go straight in. Otherwise ask for book + language.
+        if (d.id != null || d.folderPath.isNotEmpty) continue;
         final res = await showDeckForm(
           context,
           title: t.importTitle,
-          subtitle: [
-            t.importWords(d.cards.length),
-            if (fileFolder.isNotEmpty && preselect == null) t.fileFolderHint(fileFolder),
-          ].join('\n'),
+          subtitle: t.importWords(d.cards.length),
           name: d.name,
-          folderId: preselect,
+          folderId: intoFolderId,
           okLabel: t.importBtn,
         );
         if (res == null || !context.mounted) return;
         d.name = res.name;
-        if (res.folderId != null) {
-          d.targetFolderId = res.folderId;
-        } else if (fileFolder.isEmpty || preselect != null) {
-          d.targetRoot = true;
-        }
-        // else: top level chosen but file has a new folder path → create it.
+        d.targetFolderId = res.folderId;
       }
 
       final result = await lib.importDecks(incoming);

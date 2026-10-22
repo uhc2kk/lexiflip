@@ -9,13 +9,104 @@ import '../models/gamification.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/stats_provider.dart';
-import 'challenges_screen.dart';
+import 'app_shell.dart';
 import 'hub_screen.dart';
-import 'settings_screen.dart';
+import 'pdf_import_screen.dart';
 import 'sync_actions.dart';
 import 'ui_helpers.dart';
 
-/// Start page. Also refreshes due words and the reminder on start / resume.
+void _push(BuildContext context, Widget page) =>
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+
+/// Narrow = phone portrait.
+bool _narrow(BuildContext context) => MediaQuery.sizeOf(context).width < 600;
+
+// =====================================================================
+//  Shared actions
+// =====================================================================
+
+Future<void> _newBook(BuildContext context, {String? languageId, bool thenPdf = false}) async {
+  final t = S.of(context);
+  final lib = context.read<LibraryProvider>();
+  final res = await showDeckForm(context, title: t.newDeck, folderId: languageId, okLabel: t.create);
+  if (res == null || !context.mounted) return;
+  final deck = await lib.createDeck(res.name, folderId: res.folderId);
+  if (!context.mounted) return;
+  _push(context, thenPdf ? PdfImportScreen(deckId: deck.id) : HubScreen(source: CardSource.deck(deck.id)));
+}
+
+Future<void> _newLanguage(BuildContext context) async {
+  final t = S.of(context);
+  final name = await showTextInput(context, title: t.newFolder, label: t.languageName, okLabel: t.create);
+  if (name == null || !context.mounted) return;
+  await context.read<LibraryProvider>().ensureLanguage(name);
+}
+
+Future<void> _bookAction(BuildContext context, Deck d, String action) async {
+  final t = S.of(context);
+  final lib = context.read<LibraryProvider>();
+  switch (action) {
+    case 'star':
+      await lib.toggleDeckStar(d.id);
+    case 'edit':
+      final res = await showDeckForm(context, title: t.editDeck, name: d.name, folderId: d.folderId);
+      if (res != null) await lib.updateDeck(d, name: res.name, folderId: res.folderId);
+    case 'langs':
+      await editDeckLangs(context, d);
+    case 'pdf':
+      _push(context, PdfImportScreen(deckId: d.id));
+    case 'export':
+      await SyncActions.export(context, deck: d);
+    case 'delete':
+      final ok = await confirm(context,
+          title: t.deleteQ, message: t.deleteDeckMsg(d.name, lib.countsOf(d.id).total), ok: t.delete, danger: true);
+      if (ok) await lib.deleteDeck(d.id);
+  }
+}
+
+List<PopupMenuEntry<String>> _bookMenu(S t, Deck d) => [
+      PopupMenuItem(value: 'star', child: Text(d.starred ? t.unfavourite : t.favouriteDeck)),
+      PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
+      PopupMenuItem(value: 'langs', child: Text(t.deckLanguages)),
+      PopupMenuItem(value: 'pdf', child: Text(t.pdfImport)),
+      PopupMenuItem(value: 'export', child: Text(t.exportJson)),
+      PopupMenuItem(value: 'delete', child: Text(t.delete)),
+    ];
+
+/// Bottom sheet behind the + button.
+void _addSheet(BuildContext context, {String? languageId}) {
+  final t = S.of(context);
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      Widget item(IconData icon, String title, String? sub, VoidCallback onTap) => ListTile(
+            leading: Icon(icon),
+            title: Text(title),
+            subtitle: sub == null ? null : Text(sub),
+            onTap: () {
+              Navigator.pop(ctx);
+              onTap();
+            },
+          );
+      return SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          item(Icons.menu_book_rounded, t.newDeck, null, () => _newBook(context, languageId: languageId)),
+          item(Icons.picture_as_pdf_rounded, t.newBookFromPdf, t.newBookFromPdfSub,
+              () => _newBook(context, languageId: languageId, thenPdf: true)),
+          item(Icons.download_rounded, t.importJson, null,
+              () => SyncActions.import(context, intoFolderId: languageId)),
+          if (languageId == null) item(Icons.translate_rounded, t.newFolder, null, () => _newLanguage(context)),
+        ]),
+      );
+    },
+  );
+}
+
+// =====================================================================
+//  Home: languages
+// =====================================================================
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -23,368 +114,306 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refresh();
-  }
-
-  Future<void> _refresh() async {
-    if (!mounted) return;
-    await context.read<LibraryProvider>().refreshDue();
-    if (mounted) await syncReminder(context);
-  }
-
-  @override
-  Widget build(BuildContext context) => const FolderScreen(folderId: null);
-}
-
-/// A folder page (folderId == null → the home page).
-/// Shows sub-folders and decks; both can be dragged into a new order.
-class FolderScreen extends StatefulWidget {
-  const FolderScreen({super.key, required this.folderId});
-  final String? folderId;
-
-  @override
-  State<FolderScreen> createState() => _FolderScreenState();
-}
-
-class _FolderScreenState extends State<FolderScreen> {
+class _HomeScreenState extends State<HomeScreen> {
   bool _selecting = false;
   final Set<String> _selected = {};
 
-  bool get _isHome => widget.folderId == null;
+  void _toggle(String id) => setState(() => _selected.contains(id) ? _selected.remove(id) : _selected.add(id));
 
-  void _open(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-
-  // ---------------- create ----------------
-
-  Future<void> _newFolder() async {
-    final t = S.of(context);
-    final lib = context.read<LibraryProvider>();
-    final name = await showTextInput(context,
-        title: _isHome ? t.newFolder : t.newSubfolder, label: t.name, okLabel: t.create);
-    if (name == null || !mounted) return;
-    await lib.createFolder(name, parentId: widget.folderId);
-  }
-
-  Future<void> _newDeck() async {
-    final t = S.of(context);
-    final lib = context.read<LibraryProvider>();
-    final res = await showDeckForm(context, title: t.newDeck, folderId: widget.folderId, okLabel: t.create);
-    if (res == null || !mounted) return;
-    final deck = await lib.createDeck(res.name, folderId: res.folderId);
-    if (mounted) _open(HubScreen(source: CardSource.deck(deck.id)));
-  }
-
-  void _addMenu(bool canAddFolder) {
-    final t = S.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (canAddFolder)
-            ListTile(
-              leading: const Icon(Icons.create_new_folder_outlined),
-              title: Text(_isHome ? t.newFolder : t.newSubfolder),
-              onTap: () {
-                Navigator.pop(ctx);
-                _newFolder();
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.style_outlined),
-            title: Text(t.newDeck),
-            onTap: () {
-              Navigator.pop(ctx);
-              _newDeck();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.download_rounded),
-            title: Text(t.importJson),
-            onTap: () {
-              Navigator.pop(ctx);
-              SyncActions.import(context, intoFolderId: widget.folderId);
-            },
-          ),
-        ]),
-      ),
-    );
-  }
-
-  // ---------------- folder actions ----------------
-
-  Future<void> _folderAction(Folder f, String action) async {
+  Future<void> _languageAction(Folder f, String action) async {
     final t = S.of(context);
     final lib = context.read<LibraryProvider>();
     switch (action) {
       case 'rename':
-        final name = await showTextInput(context, title: t.rename, label: t.name, initial: f.name);
+        final name = await showTextInput(context, title: t.rename, label: t.languageName, initial: f.name);
         if (name != null) await lib.renameFolder(f, name);
-      case 'move':
-        if (lib.subfolders(f.id).isNotEmpty) {
-          showSnack(context, t.cantMoveFolder);
-          return;
-        }
-        final to = await pickFolder(context,
-            title: t.moveFolder, current: f.parentId, onlyRoots: true, exclude: f.id);
-        if (to == null) return;
-        final ok = await lib.moveFolder(f, to == kRootFolder ? null : to);
-        if (!ok && mounted) showSnack(context, t.cantMoveFolder);
       case 'export':
         await SyncActions.export(context, folderId: f.id);
       case 'delete':
-        final decks = lib.decksInTree(f.id).length;
-        final words = lib.countsOfFolder(f.id).total;
-        final ok = await confirm(context,
-            title: t.deleteQ, message: t.deleteFolderMsg(f.name, decks, words), ok: t.delete, danger: true);
-        if (ok) {
-          await lib.deleteFolder(f.id);
-          if (mounted && f.id == widget.folderId) Navigator.of(context).pop();
-        }
-    }
-  }
-
-  Future<void> _deckAction(Deck d, String action) async {
-    final t = S.of(context);
-    final lib = context.read<LibraryProvider>();
-    switch (action) {
-      case 'star':
-        await lib.toggleDeckStar(d.id);
-      case 'edit':
-        final res = await showDeckForm(context, title: t.editDeck, name: d.name, folderId: d.folderId);
-        if (res != null) await lib.updateDeck(d, name: res.name, folderId: res.folderId);
-      case 'langs':
-        await editDeckLangs(context, d);
-      case 'export':
-        await SyncActions.export(context, deck: d);
-      case 'delete':
         final ok = await confirm(context,
             title: t.deleteQ,
-            message: t.deleteDeckMsg(d.name, lib.countsOf(d.id).total),
+            message: t.deleteFolderMsg(f.name, lib.decksInTree(f.id).length, lib.countsOfFolder(f.id).total),
             ok: t.delete,
             danger: true);
-        if (ok) await lib.deleteDeck(d.id);
+        if (ok) await lib.deleteFolder(f.id);
     }
   }
-
-  List<PopupMenuEntry<String>> _folderMenuItems(S t, Folder f) => [
-        PopupMenuItem(value: 'rename', child: Text(t.rename)),
-        if (_lib(context).subfolders(f.id).isEmpty) PopupMenuItem(value: 'move', child: Text(t.move)),
-        PopupMenuItem(value: 'export', child: Text(t.exportJson)),
-        PopupMenuItem(value: 'delete', child: Text(t.delete)),
-      ];
-
-  static LibraryProvider _lib(BuildContext c) => c.read<LibraryProvider>();
-
-  // ---------------- build ----------------
 
   @override
   Widget build(BuildContext context) {
     final lib = context.watch<LibraryProvider>();
     final t = S.of(context);
-    final theme = Theme.of(context);
-    final folder = lib.folderById(widget.folderId);
-
-    if (!_isHome && folder == null) {
-      return Scaffold(appBar: AppBar(), body: Center(child: Text(t.nothingFound)));
-    }
-
-    final subfolders = lib.subfolders(widget.folderId);
-    final decks = lib.decksIn(widget.folderId);
-    final canAddFolder = _isHome || (folder?.isRoot ?? false);
-
-    final actions = <Widget>[
-      IconButton(
-        tooltip: t.select,
-        isSelected: _selecting,
-        icon: const Icon(Icons.checklist_rounded),
-        onPressed: () => setState(() {
-          _selecting = !_selecting;
-          _selected.clear();
-        }),
-      ),
-      if (_isHome) ...[
-        IconButton(
-          tooltip: t.challengesTooltip,
-          icon: const Icon(Icons.emoji_events_outlined),
-          onPressed: () => _open(const ChallengesScreen()),
-        ),
-        IconButton(
-          tooltip: t.themeTooltip,
-          icon: Icon(theme.brightness == Brightness.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
-          onPressed: () => context.read<SettingsProvider>().toggleTheme(theme.brightness),
-        ),
-        PopupMenuButton<String>(
-          onSelected: (v) {
-            switch (v) {
-              case 'import':
-                SyncActions.import(context);
-              case 'export':
-                SyncActions.export(context);
-              case 'settings':
-                _open(const SettingsScreen());
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(value: 'import', child: ListTile(leading: const Icon(Icons.download_rounded), title: Text(t.importJson))),
-            PopupMenuItem(value: 'export', child: ListTile(leading: const Icon(Icons.upload_file_rounded), title: Text(t.exportAll))),
-            PopupMenuItem(value: 'settings', child: ListTile(leading: const Icon(Icons.settings_outlined), title: Text(t.settings))),
-          ],
-        ),
-      ] else
-        PopupMenuButton<String>(
-          onSelected: (v) => _folderAction(folder!, v),
-          itemBuilder: (_) => _folderMenuItems(t, folder!),
-        ),
-      const SizedBox(width: 4),
-    ];
+    final languages = lib.subfolders(null);
+    final loose = lib.decksIn(null);
+    final favourites = lib.starredDecks;
 
     return Scaffold(
       appBar: AppBar(
-        title: _isHome
-            ? const Text('LexiFlip')
-            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(folder!.name),
-                if (!folder.isRoot)
-                  Text(lib.folderById(folder.parentId)?.name ?? '', style: theme.textTheme.bodySmall),
-              ]),
-        actions: actions,
+        title: const Text('LexiFlip'),
+        actions: [
+          IconButton(
+            tooltip: t.select,
+            isSelected: _selecting,
+            icon: const Icon(Icons.checklist_rounded),
+            onPressed: () => setState(() {
+              _selecting = !_selecting;
+              _selected.clear();
+            }),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'import') SyncActions.import(context);
+              if (v == 'export') SyncActions.export(context);
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'import', child: ListTile(leading: const Icon(Icons.download_rounded), title: Text(t.importJson))),
+              PopupMenuItem(value: 'export', child: ListTile(leading: const Icon(Icons.upload_file_rounded), title: Text(t.exportAll))),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       floatingActionButton: _selecting
           ? FloatingActionButton.extended(
               onPressed: _selected.isEmpty
                   ? null
-                  : () => _open(HubScreen(source: CardSource.multi(_selected.toList()))),
+                  : () => _push(context, HubScreen(source: CardSource.multi(_selected.toList()))),
               icon: const Icon(Icons.play_arrow_rounded),
               label: Text(t.practiceTogether(_selected.length)),
             )
           : FloatingActionButton(
               tooltip: t.add,
-              onPressed: () => _addMenu(canAddFolder),
+              onPressed: () => _addSheet(context),
               child: const Icon(Icons.add_rounded),
             ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-            children: [
-              if (_isHome) ...[
-                const ProgressHeader(),
-                const SizedBox(height: 10),
-                const QuestStrip(),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(child: _StarredTile(onTap: () => _open(const HubScreen(source: CardSource.starred())))),
-                  const SizedBox(width: 10),
-                  Expanded(child: _HardestTile(onTap: () => _open(const HubScreen(source: CardSource.hardest())))),
-                ]),
-                if (lib.starredDecks.isNotEmpty) ...[
-                  _SectionTitle('⭐ ${t.favouriteDecks}'),
-                  for (final d in lib.starredDecks)
-                    _DeckTile(
-                      deck: d,
-                      handle: null,
-                      selecting: _selecting,
-                      selected: _selected.contains(d.id),
-                      subtitle: lib.folderPathNames(d.folderId).join(' › '),
-                      onTap: () {
-                        if (_selecting) {
-                          setState(() => _selected.contains(d.id) ? _selected.remove(d.id) : _selected.add(d.id));
-                        } else {
-                          _open(HubScreen(source: CardSource.deck(d.id)));
-                        }
-                      },
-                      onAction: (a) => _deckAction(d, a),
-                    ),
-                ],
-              ] else
-                _FolderSummary(
-                  folderId: widget.folderId!,
-                  onPractice: () => _open(HubScreen(source: CardSource.folder(widget.folderId!))),
-                ),
-              if (_selecting)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(t.selectHint, style: theme.textTheme.bodySmall),
-                ),
-              if (subfolders.isNotEmpty) ...[
-                _SectionTitle(t.folders),
-                _ReorderList<Folder>(
-                  items: subfolders,
-                  keyOf: (f) => f.id,
-                  enabled: !_selecting,
-                  onReorder: lib.reorderFolders,
-                  itemBuilder: (f, handle) => _FolderTile(
-                    folder: f,
-                    handle: handle,
-                    onTap: () => _open(FolderScreen(folderId: f.id)),
-                    onAction: (a) => _folderAction(f, a),
-                    menu: _folderMenuItems(t, f),
-                  ),
-                ),
-              ],
-              if (decks.isNotEmpty) ...[
-                _SectionTitle(t.decks),
-                _ReorderList<Deck>(
-                  items: decks,
-                  keyOf: (d) => d.id,
-                  enabled: !_selecting,
-                  onReorder: lib.reorderDecks,
-                  itemBuilder: (d, handle) => _DeckTile(
-                    deck: d,
-                    handle: handle,
-                    selecting: _selecting,
-                    selected: _selected.contains(d.id),
-                    onTap: () {
-                      if (_selecting) {
-                        setState(() => _selected.contains(d.id) ? _selected.remove(d.id) : _selected.add(d.id));
-                      } else {
-                        _open(HubScreen(source: CardSource.deck(d.id)));
-                      }
-                    },
-                    onAction: (a) => _deckAction(d, a),
-                  ),
-                ),
-              ],
-              if (subfolders.isEmpty && decks.isEmpty)
-                _EmptyFolder(
-                  isHome: _isHome,
-                  onNewFolder: canAddFolder ? _newFolder : null,
-                  onNewDeck: _newDeck,
-                  onImport: () => SyncActions.import(context, intoFolderId: widget.folderId),
-                ),
-            ],
-          ),
+      body: _Page(children: [
+        const ProgressHeader(),
+        const SizedBox(height: 12),
+        const QuestStrip(),
+        const SizedBox(height: 12),
+        _CollectionsRow(
+          onStarred: () => _push(context, const HubScreen(source: CardSource.starred())),
+          onHardest: () => _push(context, const HubScreen(source: CardSource.hardest())),
         ),
-      ),
+        if (favourites.isNotEmpty) ...[
+          _SectionTitle('⭐ ${t.favouriteDecks}'),
+          for (final d in favourites)
+            BookTile(
+              deck: d,
+              subtitle: lib.folderById(d.folderId)?.name,
+              selecting: _selecting,
+              selected: _selected.contains(d.id),
+              onTap: () => _selecting ? _toggle(d.id) : _push(context, HubScreen(source: CardSource.deck(d.id))),
+            ),
+        ],
+        _SectionTitle(t.folders),
+        if (languages.isEmpty && loose.isEmpty)
+          _EmptyState(
+            icon: Icons.translate_rounded,
+            title: t.noDecks,
+            hint: t.noDecksHint,
+            actions: [
+              FilledButton.icon(
+                onPressed: () => _newLanguage(context),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(t.newFolder),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => SyncActions.import(context),
+                icon: const Icon(Icons.download_rounded),
+                label: Text(t.importJson),
+              ),
+            ],
+          )
+        else
+          _ReorderList<Folder>(
+            items: languages,
+            keyOf: (f) => f.id,
+            enabled: !_selecting,
+            onReorder: lib.reorderFolders,
+            itemBuilder: (f, handle) => _LanguageTile(
+              folder: f,
+              handle: handle,
+              onTap: () => _push(context, LanguageScreen(folderId: f.id)),
+              onAction: (a) => _languageAction(f, a),
+            ),
+          ),
+        if (loose.isNotEmpty) ...[
+          _SectionTitle(t.noFolder),
+          for (final d in loose)
+            BookTile(
+              deck: d,
+              selecting: _selecting,
+              selected: _selected.contains(d.id),
+              onTap: () => _selecting ? _toggle(d.id) : _push(context, HubScreen(source: CardSource.deck(d.id))),
+            ),
+        ],
+      ]),
     );
   }
 }
 
 // =====================================================================
-//  Drag-and-drop list
+//  Language page: books
 // =====================================================================
 
-/// A non-scrolling reorderable list. On a PC you can drag with the ⠿ handle
-/// immediately, or press and hold anywhere on the item; on a phone press and
-/// hold.
+class LanguageScreen extends StatefulWidget {
+  const LanguageScreen({super.key, required this.folderId});
+  final String folderId;
+
+  @override
+  State<LanguageScreen> createState() => _LanguageScreenState();
+}
+
+class _LanguageScreenState extends State<LanguageScreen> {
+  bool _selecting = false;
+  final Set<String> _selected = {};
+
+  Future<void> _menu(Folder f, String action) async {
+    final t = S.of(context);
+    final lib = context.read<LibraryProvider>();
+    switch (action) {
+      case 'rename':
+        final name = await showTextInput(context, title: t.rename, label: t.languageName, initial: f.name);
+        if (name != null) await lib.renameFolder(f, name);
+      case 'export':
+        await SyncActions.export(context, folderId: f.id);
+      case 'delete':
+        final ok = await confirm(context,
+            title: t.deleteQ,
+            message: t.deleteFolderMsg(f.name, lib.decksInTree(f.id).length, lib.countsOfFolder(f.id).total),
+            ok: t.delete,
+            danger: true);
+        if (ok) {
+          await lib.deleteFolder(f.id);
+          if (mounted) Navigator.of(context).pop();
+        }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lib = context.watch<LibraryProvider>();
+    final t = S.of(context);
+    final folder = lib.folderById(widget.folderId);
+    if (folder == null) return Scaffold(appBar: AppBar(), body: Center(child: Text(t.nothingFound)));
+    final books = lib.decksIn(folder.id);
+    final c = lib.countsOfFolder(folder.id);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(folder.name),
+        actions: [
+          IconButton(
+            tooltip: t.select,
+            isSelected: _selecting,
+            icon: const Icon(Icons.checklist_rounded),
+            onPressed: () => setState(() {
+              _selecting = !_selecting;
+              _selected.clear();
+            }),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) => _menu(folder, v),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'rename', child: Text(t.rename)),
+              PopupMenuItem(value: 'export', child: Text(t.exportJson)),
+              PopupMenuItem(value: 'delete', child: Text(t.delete)),
+            ],
+          ),
+        ],
+      ),
+      floatingActionButton: _selecting
+          ? FloatingActionButton.extended(
+              onPressed: _selected.isEmpty
+                  ? null
+                  : () => _push(context, HubScreen(source: CardSource.multi(_selected.toList()))),
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: Text(t.practiceTogether(_selected.length)),
+            )
+          : FloatingActionButton(
+              tooltip: t.add,
+              onPressed: () => _addSheet(context, languageId: folder.id),
+              child: const Icon(Icons.add_rounded),
+            ),
+      body: _Page(children: [
+        if (c.total > 0)
+          _SummaryCard(
+            counts: c,
+            label: t.practiceFolder(c.total),
+            onPractice: () => _push(context, HubScreen(source: CardSource.folder(folder.id))),
+          ),
+        if (_selecting)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(t.selectHint, style: Theme.of(context).textTheme.bodySmall),
+          ),
+        _SectionTitle(t.decks),
+        if (books.isEmpty)
+          _EmptyState(
+            icon: Icons.menu_book_rounded,
+            title: t.emptyFolder,
+            actions: [
+              FilledButton.icon(
+                onPressed: () => _newBook(context, languageId: folder.id),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(t.newDeck),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _newBook(context, languageId: folder.id, thenPdf: true),
+                icon: const Icon(Icons.picture_as_pdf_rounded),
+                label: Text(t.newBookFromPdf),
+              ),
+            ],
+          )
+        else
+          _ReorderList<Deck>(
+            items: books,
+            keyOf: (d) => d.id,
+            enabled: !_selecting,
+            onReorder: lib.reorderDecks,
+            itemBuilder: (d, handle) => BookTile(
+              deck: d,
+              handle: handle,
+              selecting: _selecting,
+              selected: _selected.contains(d.id),
+              onTap: () {
+                if (_selecting) {
+                  setState(() => _selected.contains(d.id) ? _selected.remove(d.id) : _selected.add(d.id));
+                } else {
+                  _push(context, HubScreen(source: CardSource.deck(d.id)));
+                }
+              },
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+// =====================================================================
+//  Layout pieces
+// =====================================================================
+
+/// Centred, width-limited scrolling page with room for the FAB.
+class _Page extends StatelessWidget {
+  const _Page({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final pad = _narrow(context) ? 12.0 : 16.0;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: ListView(padding: EdgeInsets.fromLTRB(pad, 4, pad, 96), children: children),
+      ),
+    );
+  }
+}
+
+/// Non-scrolling reorderable list. PC: drag the ⠿ handle (or press & hold);
+/// phone: press and hold the item.
 class _ReorderList<T> extends StatelessWidget {
   const _ReorderList({
     required this.items,
@@ -403,8 +432,7 @@ class _ReorderList<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final desktop = kIsWeb ||
-        const {TargetPlatform.windows, TargetPlatform.macOS, TargetPlatform.linux}
-            .contains(defaultTargetPlatform);
+        const {TargetPlatform.windows, TargetPlatform.macOS, TargetPlatform.linux}.contains(defaultTargetPlatform);
     return ReorderableListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -447,34 +475,23 @@ class _ReorderList<T> extends StatelessWidget {
   }
 }
 
-// =====================================================================
-//  Tiles
-// =====================================================================
-
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text);
   final String text;
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 18, 4, 6),
-        child: Text(text, style: Theme.of(context).textTheme.titleSmall),
+        padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
+        child: Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
       );
 }
 
-class _FolderTile extends StatelessWidget {
-  const _FolderTile({
-    required this.folder,
-    required this.handle,
-    required this.onTap,
-    required this.onAction,
-    required this.menu,
-  });
+class _LanguageTile extends StatelessWidget {
+  const _LanguageTile({required this.folder, required this.handle, required this.onTap, required this.onAction});
   final Folder folder;
   final Widget? handle;
   final VoidCallback onTap;
   final void Function(String) onAction;
-  final List<PopupMenuEntry<String>> menu;
 
   @override
   Widget build(BuildContext context) {
@@ -482,35 +499,45 @@ class _FolderTile extends StatelessWidget {
     final t = S.of(context);
     final theme = Theme.of(context);
     final c = lib.countsOfFolder(folder.id);
-    final subs = lib.subfolders(folder.id).length;
-    final decks = lib.decksInTree(folder.id).length;
+    final books = lib.decksIn(folder.id).length;
+    final initial = folder.name.isEmpty ? '?' : folder.name.characters.first.toUpperCase();
 
     return Card(
       elevation: 0,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      color: theme.colorScheme.surfaceContainerLow,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      color: theme.colorScheme.surfaceContainerHigh,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 12, 4, 12),
+          padding: const EdgeInsets.fromLTRB(6, 14, 0, 14),
           child: Row(children: [
             if (handle != null) handle!,
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(Icons.folder_rounded, size: 34, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Text(initial,
+                  style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
             ),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(folder.name, style: theme.textTheme.titleMedium),
+                Text(folder.name, style: theme.textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
-                Text(t.folderInfo(subs, decks, c.learned, c.total), style: theme.textTheme.bodySmall),
-                const SizedBox(height: 6),
+                Text(t.languageInfo(books, c.learned, c.total), style: theme.textTheme.bodySmall),
+                const SizedBox(height: 8),
                 BucketBar(counts: c),
               ]),
             ),
-            const Icon(Icons.chevron_right_rounded),
-            PopupMenuButton<String>(onSelected: onAction, itemBuilder: (_) => menu),
+            PopupMenuButton<String>(
+              onSelected: onAction,
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'rename', child: Text(t.rename)),
+                PopupMenuItem(value: 'export', child: Text(t.exportJson)),
+                PopupMenuItem(value: 'delete', child: Text(t.delete)),
+              ],
+            ),
           ]),
         ),
       ),
@@ -518,23 +545,23 @@ class _FolderTile extends StatelessWidget {
   }
 }
 
-class _DeckTile extends StatelessWidget {
-  const _DeckTile({
+/// A book in a list.
+class BookTile extends StatelessWidget {
+  const BookTile({
+    super.key,
     required this.deck,
-    required this.handle,
-    required this.selecting,
-    required this.selected,
     required this.onTap,
-    required this.onAction,
+    this.handle,
     this.subtitle,
+    this.selecting = false,
+    this.selected = false,
   });
   final Deck deck;
-  final String? subtitle;
+  final VoidCallback onTap;
   final Widget? handle;
+  final String? subtitle;
   final bool selecting;
   final bool selected;
-  final VoidCallback onTap;
-  final void Function(String) onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -544,23 +571,28 @@ class _DeckTile extends StatelessWidget {
 
     return Card(
       elevation: 0,
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: 5),
       color: selected ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerHigh,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 12, 4, 12),
+          padding: const EdgeInsets.fromLTRB(6, 14, 0, 14),
           child: Row(children: [
             if (selecting)
               Checkbox(value: selected, onChanged: (_) => onTap())
             else if (handle != null)
               handle!,
             const SizedBox(width: 8),
+            Icon(Icons.menu_book_rounded, size: 30, color: theme.colorScheme.tertiary),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Flexible(child: Text(deck.name, style: theme.textTheme.titleMedium, overflow: TextOverflow.ellipsis)),
+                  Flexible(
+                    child: Text(deck.name,
+                        style: theme.textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
                   if (deck.starred) ...[
                     const SizedBox(width: 6),
                     const Icon(Icons.star_rounded, size: 18, color: Color(0xFFF5B301)),
@@ -568,23 +600,19 @@ class _DeckTile extends StatelessWidget {
                 ]),
                 if (subtitle != null && subtitle!.isNotEmpty)
                   Text(subtitle!, style: theme.textTheme.bodySmall),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 BucketBar(counts: c),
                 const SizedBox(height: 6),
-                Text(t.deckCounts(c.learned, c.problem, c.review), style: theme.textTheme.bodySmall),
+                Text(t.bookCounts(c.total, c.learned, c.problem), style: theme.textTheme.bodySmall),
               ]),
             ),
             if (!selecting)
               PopupMenuButton<String>(
-                onSelected: onAction,
-                itemBuilder: (_) => [
-                  PopupMenuItem(value: 'star', child: Text(deck.starred ? t.unfavourite : t.favouriteDeck)),
-                  PopupMenuItem(value: 'edit', child: Text(t.nameAndFolder)),
-                  PopupMenuItem(value: 'langs', child: Text(t.deckLanguages)),
-                  PopupMenuItem(value: 'export', child: Text(t.exportJson)),
-                  PopupMenuItem(value: 'delete', child: Text(t.delete)),
-                ],
-              ),
+                onSelected: (a) => _bookAction(context, deck, a),
+                itemBuilder: (_) => _bookMenu(t, deck),
+              )
+            else
+              const SizedBox(width: 12),
           ]),
         ),
       ),
@@ -592,83 +620,104 @@ class _DeckTile extends StatelessWidget {
   }
 }
 
-class _StarredTile extends StatelessWidget {
-  const _StarredTile({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final n = context.select<LibraryProvider, int>((l) => l.starredCount);
-    final t = S.of(context);
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        leading: const Icon(Icons.star_rounded, color: Color(0xFFF5B301), size: 32),
-        title: Text(t.starred),
-        subtitle: Text(t.starredSub(n)),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _HardestTile extends StatelessWidget {
-  const _HardestTile({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final n = context.select<LibraryProvider, int>((l) => l.hardestCards.length);
-    final t = S.of(context);
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        leading: const Text('💀', style: TextStyle(fontSize: 28)),
-        title: Text(t.hardest),
-        subtitle: Text(n == 0 ? t.hardestEmptyShort : t.wordsN(n)),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _FolderSummary extends StatelessWidget {
-  const _FolderSummary({required this.folderId, required this.onPractice});
-  final String folderId;
-  final VoidCallback onPractice;
+/// ⭐ Starred words + 💀 hardest words. Side by side on wide screens,
+/// stacked on phones (so the text never gets squeezed).
+class _CollectionsRow extends StatelessWidget {
+  const _CollectionsRow({required this.onStarred, required this.onHardest});
+  final VoidCallback onStarred;
+  final VoidCallback onHardest;
 
   @override
   Widget build(BuildContext context) {
     final lib = context.watch<LibraryProvider>();
     final t = S.of(context);
+    final starred = _CollectionTile(
+      leading: const Icon(Icons.star_rounded, color: Color(0xFFF5B301), size: 28),
+      title: t.starred,
+      subtitle: lib.starredCount == 0 ? t.starredHintShort : t.wordsN(lib.starredCount),
+      onTap: onStarred,
+    );
+    final n = lib.hardestCards.length;
+    final hardest = _CollectionTile(
+      leading: const Text('💀', style: TextStyle(fontSize: 24)),
+      title: t.hardest,
+      subtitle: n == 0 ? t.hardestEmptyShort : t.wordsN(n),
+      onTap: onHardest,
+    );
+    if (_narrow(context)) {
+      return Column(children: [starred, const SizedBox(height: 8), hardest]);
+    }
+    return Row(children: [
+      Expanded(child: starred),
+      const SizedBox(width: 10),
+      Expanded(child: hardest),
+    ]);
+  }
+}
+
+class _CollectionTile extends StatelessWidget {
+  const _CollectionTile({required this.leading, required this.title, required this.subtitle, required this.onTap});
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final c = lib.countsOfFolder(folderId);
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
       color: theme.colorScheme.surfaceContainerHigh,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(children: [
+            SizedBox(width: 32, child: Center(child: leading)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: theme.textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(subtitle, style: theme.textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ]),
+            ),
+            const Icon(Icons.chevron_right_rounded),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.counts, required this.label, required this.onPractice});
+  final DeckCounts counts;
+  final String label;
+  final VoidCallback onPractice;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = S.of(context);
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(top: 4),
+      color: theme.colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(t.deckCounts(c.learned, c.problem, c.review), style: theme.textTheme.bodyMedium),
+          Text(t.bookCounts(counts.total, counts.learned, counts.problem), style: theme.textTheme.bodyMedium),
           const SizedBox(height: 8),
-          BucketBar(counts: c, height: 8),
+          BucketBar(counts: counts, height: 8),
           const SizedBox(height: 14),
           FilledButton.icon(
             style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-            onPressed: c.total == 0 ? null : onPractice,
+            onPressed: onPractice,
             icon: const Icon(Icons.library_books_outlined),
-            label: Text(t.practiceFolder(c.total)),
+            label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ]),
       ),
@@ -676,49 +725,38 @@ class _FolderSummary extends StatelessWidget {
   }
 }
 
-class _EmptyFolder extends StatelessWidget {
-  const _EmptyFolder({
-    required this.isHome,
-    required this.onNewFolder,
-    required this.onNewDeck,
-    required this.onImport,
-  });
-  final bool isHome;
-  final VoidCallback? onNewFolder;
-  final VoidCallback onNewDeck;
-  final VoidCallback onImport;
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.icon, required this.title, this.hint, required this.actions});
+  final IconData icon;
+  final String title;
+  final String? hint;
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
-    final t = S.of(context);
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40),
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 8),
       child: Column(children: [
-        Icon(Icons.folder_open_rounded, size: 64, color: theme.colorScheme.onSurfaceVariant),
+        Icon(icon, size: 56, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(height: 12),
-        Text(isHome ? t.noDecks : t.emptyFolder, style: theme.textTheme.titleMedium),
+        Text(title, style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+        if (hint != null) ...[
+          const SizedBox(height: 6),
+          Text(hint!, style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
+        ],
         const SizedBox(height: 20),
-        Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
-          if (onNewFolder != null)
-            OutlinedButton.icon(
-              onPressed: onNewFolder,
-              icon: const Icon(Icons.create_new_folder_outlined),
-              label: Text(isHome ? t.newFolder : t.newSubfolder),
-            ),
-          FilledButton.icon(onPressed: onNewDeck, icon: const Icon(Icons.add_rounded), label: Text(t.newDeck)),
-          OutlinedButton.icon(onPressed: onImport, icon: const Icon(Icons.download_rounded), label: Text(t.importJson)),
-        ]),
+        Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: actions),
       ]),
     );
   }
 }
 
 // =====================================================================
-//  Progress header & quests (home)
+//  Progress header & quests
 // =====================================================================
 
-/// Level + XP bar + today's goal + streak.
+/// Level + XP bar + today's goal + streak. Tap → Challenge tab.
 class ProgressHeader extends StatelessWidget {
   const ProgressHeader({super.key});
 
@@ -741,41 +779,48 @@ class ProgressHeader extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHigh,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChallengesScreen())),
+        onTap: () => AppShell.goTo(context, 1),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(children: [
-            Text(rank.emoji, style: const TextStyle(fontSize: 40)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${t.levelN(level)} · ${t.rankName(rank.id)}', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(value: frac, minHeight: 8),
-                ),
-                const SizedBox(height: 4),
-                Text('${stats.xp - from} / ${to - from} XP', style: theme.textTheme.bodySmall),
-              ]),
-            ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: 52,
-              height: 52,
-              child: Stack(fit: StackFit.expand, children: [
-                CircularProgressIndicator(
-                  value: (today / goal).clamp(0.0, 1.0),
-                  strokeWidth: 5,
-                  backgroundColor: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-                ),
-                Center(child: Text(today >= goal ? '✓' : '$today', style: theme.textTheme.titleSmall)),
-              ]),
-            ),
-            const SizedBox(width: 12),
-            Column(children: [
-              Text(streak > 0 ? '🔥' : '💤', style: const TextStyle(fontSize: 24)),
-              Text(t.days(streak), style: theme.textTheme.labelSmall),
+          child: Column(children: [
+            Row(children: [
+              Text(rank.emoji, style: const TextStyle(fontSize: 34)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(t.levelN(level), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(t.rankName(rank.id), style: theme.textTheme.bodyMedium),
+                ]),
+              ),
+              _Pill(icon: streak > 0 ? '🔥' : '💤', text: t.days(streak)),
+            ]),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(value: frac, minHeight: 8),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('${stats.xp - from} / ${to - from} XP', style: theme.textTheme.bodySmall),
+                ]),
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 46,
+                height: 46,
+                child: Stack(fit: StackFit.expand, children: [
+                  CircularProgressIndicator(
+                    value: (today / goal).clamp(0.0, 1.0),
+                    strokeWidth: 5,
+                    backgroundColor: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                  Center(child: Text(today >= goal ? '✓' : '$today', style: theme.textTheme.labelLarge)),
+                ]),
+              ),
+              const SizedBox(width: 8),
+              Text(t.goalShort(goal), style: theme.textTheme.bodySmall),
             ]),
           ]),
         ),
@@ -784,7 +829,30 @@ class ProgressHeader extends StatelessWidget {
   }
 }
 
-/// Today's 3 quests in one compact card.
+class _Pill extends StatelessWidget {
+  const _Pill({required this.icon, required this.text});
+  final String icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(icon, style: const TextStyle(fontSize: 16)),
+        const SizedBox(width: 6),
+        Text(text, style: theme.textTheme.labelLarge),
+      ]),
+    );
+  }
+}
+
+/// Today's 3 quests in one compact card. Tap → Challenge tab.
 class QuestStrip extends StatelessWidget {
   const QuestStrip({super.key});
 
@@ -800,7 +868,7 @@ class QuestStrip extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChallengesScreen())),
+        onTap: () => AppShell.goTo(context, 1),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -832,7 +900,7 @@ class QuestRow extends StatelessWidget {
     final done = stats.questDone(quest, weekly: weekly);
     final p = stats.questProgress(quest, weekly: weekly).clamp(0, quest.target);
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: dense ? 3 : 6),
+      padding: EdgeInsets.symmetric(vertical: dense ? 4 : 6),
       child: Row(children: [
         Icon(done ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
             size: dense ? 18 : 22, color: done ? BucketColors.learned(context) : theme.colorScheme.outline),

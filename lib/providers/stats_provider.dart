@@ -37,6 +37,11 @@ class StatsProvider extends ChangeNotifier {
   List<String> _list(String k) =>
       List<String>.from(_box.get(k, defaultValue: const <String>[]) as List);
 
+  Future<void> resetAll() async {
+    await _box.clear();
+    notifyListeners();
+  }
+
   // ---------------- read API ----------------
 
   int get xp => _int('xp');

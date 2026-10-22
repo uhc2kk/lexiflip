@@ -5,7 +5,7 @@ import 'l10n/strings.dart';
 import 'providers/library_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/stats_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/app_shell.dart';
 import 'services/autofill_service.dart';
 import 'services/storage_service.dart';
 import 'services/tts_service.dart';
@@ -69,7 +69,7 @@ class LexiFlipApp extends StatelessWidget {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: mode,
-      home: const HomeScreen(),
+      home: const AppShell(),
       ),
     );
   }

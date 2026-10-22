@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/stats_provider.dart';
 import '../services/reminder_service.dart';
 import 'ui_helpers.dart';
 
@@ -233,6 +235,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _Shortcut(keys: '← / 1', action: t.dontKnow),
               _Shortcut(keys: 'P', action: t.kPronounce),
               _Shortcut(keys: 'Esc', action: t.kEsc),
+
+              header(t.dataSection),
+              ListTile(
+                leading: Icon(Icons.delete_forever_rounded, color: theme.colorScheme.error),
+                title: Text(t.resetAll, style: TextStyle(color: theme.colorScheme.error)),
+                subtitle: Text(t.resetAllSub),
+                onTap: () async {
+                  final ok = await confirm(context,
+                      title: t.resetAll, message: t.resetAllMsg, ok: t.delete, danger: true);
+                  if (!ok || !context.mounted) return;
+                  await context.read<LibraryProvider>().wipeAll();
+                  if (!context.mounted) return;
+                  await context.read<StatsProvider>().resetAll();
+                  if (context.mounted) showSnack(context, t.resetDone);
+                },
+              ),
             ],
           ),
         ),

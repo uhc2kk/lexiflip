@@ -30,9 +30,8 @@ class ImportedDeck {
   String name;
   List<String> folderPath;
 
-  /// When set, the deck goes into this existing folder (chosen in the UI).
+  /// When set, the book goes into this language (chosen in the UI).
   String? targetFolderId;
-  bool targetRoot = false;
   final List<Flashcard> cards;
 }
 

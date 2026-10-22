@@ -64,13 +64,13 @@ class S {
   String get exportAll => _t('Hammasini eksport', 'Export all', 'Экспорт всего');
   String get settings => _t('Sozlamalar', 'Settings', 'Настройки');
   String get deckFab => _t('To\'plam', 'Deck', 'Набор');
-  String get newDeck => _t('Yangi to\'plam', 'New deck', 'Новый набор');
-  String get noDecks => _t('Hali to\'plam yo\'q', 'No decks yet', 'Пока нет наборов');
+  String get newDeck => _t('Yangi kitob', 'New book', 'Новая книга');
+  String get noDecks => _t('Hali til yo\'q', 'No languages yet', 'Пока нет языков');
   String get noDecksHint => _t(
-      'Yangi to\'plam yarating yoki JSON faylni import qiling.',
-      'Create a new deck or import a JSON file.',
-      'Создайте новый набор или импортируйте JSON-файл.');
-  String get noFolder => _t('Papkasiz', 'No folder', 'Без папки');
+      'Til qo\'shing (masalan English yoki Arabcha), so\'ng uning ichida kitoblar yarating.',
+      'Add a language (e.g. English or Arabic), then create books inside it.',
+      'Добавьте язык (например English или арабский), затем создайте в нём книги.');
+  String get noFolder => _t('Tilsiz kitoblar', 'Books without a language', 'Книги без языка');
   String folderSubtitle(int decks, int learned, int total) => _t(
       '$decks ta to\'plam · $learned/$total yodlangan',
       '$decks decks · $learned/$total learned',
@@ -80,16 +80,16 @@ class S {
   String get renameFolder =>
       _t('Papka nomini o\'zgartirish', 'Rename folder', 'Переименовать папку');
   String get folderName => _t('Papka nomi', 'Folder name', 'Название папки');
-  String get nameAndFolder => _t('Nomi / papkasi', 'Name / folder', 'Название / папка');
+  String get nameAndFolder => _t('Nomi / tili', 'Name / language', 'Название / язык');
   String get exportJson => _t('Eksport (JSON)', 'Export (JSON)', 'Экспорт (JSON)');
   String deckCounts(int learned, int problem, int review) => _t(
       '$learned yodlangan · $problem muammoli · $review qaytarish',
       '$learned learned · $problem problem · $review to review',
       'выучено $learned · проблемных $problem · повторить $review');
   String deleteDeckMsg(String name, int n) => _t(
-      '"$name" va undagi $n ta so\'z o\'chiriladi.',
-      '"$name" and its $n words will be deleted.',
-      '«$name» и все слова ($n) будут удалены.');
+      '"$name" kitobi va undagi $n ta so\'z o\'chiriladi.',
+      'Book "$name" and its $n words will be deleted.',
+      'Книга «$name» и все слова ($n) будут удалены.');
 
   // ---------------- Daily goal ----------------
   String get goalDone => _t('Bugungi maqsad bajarildi!', 'Today\'s goal done!', 'Цель на сегодня выполнена!');
@@ -99,9 +99,9 @@ class S {
   String days(int n) => _t('$n kun', '$n days', '$n дн.');
 
   // ---------------- Deck form ----------------
-  String get editDeck => _t('To\'plamni tahrirlash', 'Edit deck', 'Изменить набор');
-  String get deckName => _t('To\'plam nomi', 'Deck name', 'Название набора');
-  String get deckNameHint => _t('Masalan: Mavzu 1', 'e.g. Topic 1', 'Например: Тема 1');
+  String get editDeck => _t('Kitobni tahrirlash', 'Edit book', 'Изменить книгу');
+  String get deckName => _t('Kitob nomi', 'Book name', 'Название книги');
+  String get deckNameHint => _t('Masalan: Oxford 3000', 'e.g. Oxford 3000', 'Например: Oxford 3000');
   String get enterName => _t('Nom kiriting', 'Enter a name', 'Введите название');
   String get folderOptional => _t('Papka (ixtiyoriy)', 'Folder (optional)', 'Папка (необязательно)');
   String get folderHint => _t('Masalan: Arabcha', 'e.g. Arabic', 'Например: Арабский');
@@ -124,12 +124,12 @@ class S {
       'All words go back to "To review".',
       'Все слова вернутся в «Повторить».');
   String get reset => _t('Tozalash', 'Reset', 'Сбросить');
-  String get deleteDeck => _t('To\'plamni o\'chirish', 'Delete deck', 'Удалить набор');
+  String get deleteDeck => _t('Kitobni o\'chirish', 'Delete book', 'Удалить книгу');
   String deleteDeckAllMsg(String name) => _t(
-      '"$name" va undagi barcha so\'zlar o\'chiriladi.',
-      '"$name" and all its words will be deleted.',
-      '«$name» и все его слова будут удалены.');
-  String get deckNotFound => _t('To\'plam topilmadi', 'Deck not found', 'Набор не найден');
+      '"$name" kitobi va undagi barcha so\'zlar o\'chiriladi.',
+      'Book "$name" and all its words will be deleted.',
+      'Книга «$name» и все её слова будут удалены.');
+  String get deckNotFound => _t('Kitob topilmadi', 'Book not found', 'Книга не найдена');
   String get firstWord => _t('Birinchi so\'zni qo\'shish', 'Add the first word', 'Добавить первое слово');
   String countSuffix(int n) => _t('$n ta', '$n', '$n');
   String get changeBucket => _t('Bo\'limni o\'zgartirish', 'Change bucket', 'Сменить раздел');
@@ -139,7 +139,7 @@ class S {
       'Hamma so\'zlar yodlangan! "Hammasini ko\'rish"ni sinab ko\'ring.',
       'Everything is learned! Try "Browse all".',
       'Всё выучено! Попробуйте «Просмотр всех».');
-  String get deckEmpty => _t('To\'plamda so\'z yo\'q.', 'This deck has no words.', 'В наборе нет слов.');
+  String get deckEmpty => _t('Kitobda so\'z yo\'q.', 'This book has no words.', 'В книге нет слов.');
 
   // ---------------- Study ----------------
   String get modePractice => _t('Mashq', 'Practice', 'Тренировка');
@@ -208,7 +208,7 @@ class S {
       'Partially filled — complete the empty fields.',
       'Заполнено частично — допишите пустые поля.');
   // ---- Deck languages ----
-  String get deckLanguages => _t('To\'plam tillari', 'Deck languages', 'Языки набора');
+  String get deckLanguages => _t('Kitob tillari', 'Book languages', 'Языки книги');
   String get langWord => _t('So\'z tili', 'Word language', 'Язык слов');
   String get langPrimary => _t('1-tarjima tili', '1st translation', '1-й перевод');
   String get langSecondary => _t('2-tarjima tili', '2nd translation', '2-й перевод');
@@ -216,12 +216,12 @@ class S {
       'So\'z tili bilan bir xil bo\'lsa — sinonim; 1-tarjima bilan bir xil bo\'lsa — boshqa tarjima.',
       'Same as word language → a synonym; same as 1st → another translation.',
       'Как язык слов → синоним; как 1-й перевод → другой вариант перевода.');
-  String applyToFolder(String folder) => _t('"$folder" papkasidagi barcha to\'plamlarga',
-      'All decks in "$folder"', 'Все наборы в «$folder»');
+  String applyToFolder(String folder) => _t('"$folder" dagi barcha kitoblarga',
+      'All books in "$folder"', 'Все книги в «$folder»');
   String get changeLangs => _t('Tillarni o\'zgartirish', 'Change languages', 'Изменить языки');
   String get langsSaved => _t('Tillar saqlandi', 'Languages saved', 'Языки сохранены');
-  String get defaultLangs => _t('Standart tillar (tili tanlanmagan to\'plamlar uchun)',
-      'Default languages (for decks without their own)', 'Языки по умолчанию (для наборов без своих)');
+  String get defaultLangs => _t('Standart tillar (tili tanlanmagan kitoblar uchun)',
+      'Default languages (for books without their own)', 'Языки по умолчанию (для книг без своих)');
   String get viaGemini => _t('Gemini', 'Gemini', 'Gemini');
   String get viaFree => _t('Bepul lug\'at (Gemini kaliti yo\'q)', 'Free dictionary (no Gemini key)',
       'Бесплатный словарь (нет ключа Gemini)');
@@ -291,7 +291,7 @@ class S {
 
   // ---------------- v2: folders ----------------
   String get add => _t('Qo\'shish', 'Add', 'Добавить');
-  String get newFolder => _t('Yangi papka', 'New folder', 'Новая папка');
+  String get newFolder => _t('Yangi til', 'New language', 'Новый язык');
   String get newSubfolder => _t('Yangi ichki papka', 'New sub-folder', 'Новая подпапка');
   String get rename => _t('Nomini o\'zgartirish', 'Rename', 'Переименовать');
   String get move => _t('Ko\'chirish', 'Move', 'Переместить');
@@ -301,28 +301,28 @@ class S {
       'A folder with sub-folders can\'t go inside another folder (2 levels max).',
       'Папку с подпапками нельзя вложить в другую (максимум 2 уровня).');
   String deleteFolderMsg(String name, int decks, int words) => _t(
-      '"$name" papkasi, undagi $decks ta to\'plam va $words ta so\'z o\'chiriladi.',
-      'Folder "$name" with $decks decks and $words words will be deleted.',
-      'Папка «$name», наборов: $decks, слов: $words — всё будет удалено.');
+      '"$name" tili, undagi $decks ta kitob va $words ta so\'z o\'chiriladi.',
+      'Language "$name" with $decks books and $words words will be deleted.',
+      'Язык «$name», книг: $decks, слов: $words — всё будет удалено.');
   String get select => _t('Tanlash', 'Select', 'Выбрать');
   String get selectHint => _t(
-      'Birga mashq qilish uchun to\'plamlarni belgilang.',
-      'Tick the decks you want to practise together.',
-      'Отметьте наборы для совместной тренировки.');
+      'Birga mashq qilish uchun kitoblarni belgilang.',
+      'Tick the books you want to practise together.',
+      'Отметьте книги для совместной тренировки.');
   String practiceTogether(int n) => _t('Birga mashq ($n)', 'Practise together ($n)', 'Вместе ($n)');
-  String get folders => _t('Papkalar', 'Folders', 'Папки');
-  String get decks => _t('To\'plamlar', 'Decks', 'Наборы');
+  String get folders => _t('Tillar', 'Languages', 'Языки');
+  String get decks => _t('Kitoblar', 'Books', 'Книги');
   String folderInfo(int subs, int decks, int learned, int total) => _t(
       '${subs > 0 ? '$subs ta papka · ' : ''}$decks ta to\'plam · $learned/$total yodlangan',
       '${subs > 0 ? '$subs folders · ' : ''}$decks decks · $learned/$total learned',
       '${subs > 0 ? 'папок: $subs · ' : ''}наборов: $decks · выучено $learned/$total');
   String practiceFolder(int n) =>
-      _t('Butun papkani mashq qilish ($n)', 'Practise the whole folder ($n)', 'Тренировать всю папку ($n)');
-  String get emptyFolder => _t('Papka bo\'sh', 'This folder is empty', 'Папка пуста');
+      _t('Barcha kitoblarni mashq qilish ($n)', 'Practise all books ($n)', 'Тренировать все книги ($n)');
+  String get emptyFolder => _t('Bu tilda hali kitob yo\'q', 'No books in this language yet', 'В этом языке пока нет книг');
   String get topLevel => _t('Asosiy sahifa (papkasiz)', 'Home (no folder)', 'Главная (без папки)');
-  String get folder => _t('Papka', 'Folder', 'Папка');
-  String get wholeFolder => _t('Butun papka', 'Whole folder', 'Вся папка');
-  String selectedDecks(int n) => _t('Tanlangan $n ta to\'plam', '$n selected decks', 'Выбрано наборов: $n');
+  String get folder => _t('Til', 'Language', 'Язык');
+  String get wholeFolder => _t('Butun til', 'Whole language', 'Весь язык');
+  String selectedDecks(int n) => _t('Tanlangan $n ta kitob', '$n selected books', 'Выбрано книг: $n');
   String get importTitle => _t('Import', 'Import', 'Импорт');
   String fileFolderHint(String path) => _t(
       'Fayldagi papka: $path — papka tanlamasangiz, shu nom bilan yaratiladi.',
@@ -410,7 +410,7 @@ class S {
   String get statQuests => _t('vazifa', 'quests', 'заданий');
 
   // ---------------- v2.1 ----------------
-  String get favouriteDecks => _t('Sevimli to\'plamlar', 'Favourite decks', 'Избранные наборы');
+  String get favouriteDecks => _t('Sevimli kitoblar', 'Favourite books', 'Избранные книги');
   String get favouriteDeck => _t('Sevimlilarga qo\'shish', 'Add to favourites', 'В избранное');
   String get unfavourite => _t('Sevimlilardan olish', 'Remove from favourites', 'Убрать из избранного');
   String get hardest => _t('Eng qiyin so\'zlar', 'Hardest words', 'Самые трудные слова');
@@ -479,6 +479,56 @@ class S {
       '🔥 Keep your $n-day streak — finish today\'s goal!',
       '🔥 Не потеряйте серию из $n дн. — выполните цель дня!');
 
+  // ---------------- v3 ----------------
+  String get tabBooks => _t('Kitoblar', 'Books', 'Книги');
+  String get tabChallenges => _t('Challenge', 'Challenges', 'Челленджи');
+  String get languageName => _t('Til nomi', 'Language name', 'Название языка');
+  String get chooseExisting => _t('Mavjud tildan tanlash', 'Pick an existing language', 'Выбрать существующий');
+  String languageInfo(int books, int learned, int total) => _t(
+      '$books ta kitob · $learned / $total yodlangan',
+      '$books books · $learned / $total learned',
+      'Книг: $books · выучено $learned / $total');
+  String bookCounts(int total, int learned, int problem) => _t(
+      '$total ta so\'z · $learned yodlangan · $problem muammoli',
+      '$total words · $learned learned · $problem problem',
+      'Слов: $total · выучено $learned · трудных $problem');
+  String goalShort(int goal) => _t('/ $goal\nbugun', '/ $goal\ntoday', '/ $goal\nсегодня');
+  String get starredHintShort => _t('⭐ bosilgan so\'zlar', 'Words you starred', 'Слова со звёздочкой');
+  String get newBookFromPdf => _t('PDF\'dan kitob', 'Book from PDF', 'Книга из PDF');
+  String get newBookFromPdfSub => _t(
+      'AI kitobdagi so\'zlarni o\'zi ajratadi', 'AI extracts the words for you', 'ИИ сам извлечёт слова');
+  String get pdfImport => _t('PDF\'dan so\'z olish', 'Words from PDF', 'Слова из PDF');
+  String get pdfIntro => _t(
+      'PDF kitob yoki lug\'atni tanlang — Gemini AI sahifalarni o\'qib, so\'zlarni o\'qilishi va tarjimasi bilan ajratadi. Ko\'rib chiqib, kitobga qo\'shasiz.',
+      'Pick a PDF book or word list — Gemini AI reads the pages and extracts the words with reading and translation. Review them, then add to the book.',
+      'Выберите PDF — Gemini прочитает страницы и извлечёт слова с чтением и переводом. Проверьте и добавьте в книгу.');
+  String get pdfPick => _t('PDF tanlash', 'Choose PDF', 'Выбрать PDF');
+  String get pdfNote => _t('Ko\'rsatma (ixtiyoriy)', 'Instruction (optional)', 'Указание (необязательно)');
+  String get pdfNoteHint => _t(
+      'Masalan: faqat 3–5-darslar lug\'ati', 'e.g. only the vocabulary of lessons 3–5', 'Например: только словарь уроков 3–5');
+  String get pdfStart => _t('So\'zlarni ajratish', 'Extract words', 'Извлечь слова');
+  String pdfWorking(int s) => _t('AI o\'qiyapti… $s s', 'AI is reading… $s s', 'ИИ читает… $s с');
+  String pdfFound(int n) => _t('$n ta so\'z topildi', '$n words found', 'Найдено слов: $n');
+  String get pdfNone => _t('So\'z topilmadi. Ko\'rsatma yozib qayta urinib ko\'ring.', 'No words found. Add an instruction and try again.', 'Слова не найдены. Добавьте указание и попробуйте снова.');
+  String get pdfTruncated => _t(
+      'Kitob katta — faqat bir qismi olindi. Qolganini olish uchun ko\'rsatmada darslarni belgilab qayta ishga tushiring.',
+      'The book is large — only part was extracted. Run again with an instruction naming the next lessons.',
+      'Книга большая — извлечена только часть. Запустите снова, указав следующие уроки.');
+  String pdfTooBig(int mb) => _t('PDF $mb MB dan katta. Kichikroq qismini tanlang.', 'PDF is larger than $mb MB. Pick a smaller part.', 'PDF больше $mb МБ. Выберите часть поменьше.');
+  String get pdfNeedsKeyTitle => _t('Gemini kaliti kerak', 'Gemini key needed', 'Нужен ключ Gemini');
+  String get pdfNeedsKey => _t(
+      'PDF\'ni o\'qish uchun bepul Gemini API kaliti kerak. Quyidagi saytda Google akkaunt bilan 1 daqiqada oling va Sozlamalar → Gemini API kaliti maydoniga qo\'ying:',
+      'Reading PDFs needs a free Gemini API key. Get one in a minute with your Google account and paste it in Settings → Gemini API key:',
+      'Для чтения PDF нужен бесплатный ключ Gemini API. Получите его за минуту и вставьте в Настройки → Ключ Gemini API:');
+  String get dataSection => _t('Ma\'lumotlar', 'Data', 'Данные');
+  String get resetAll => _t('Barcha ma\'lumotlarni o\'chirish', 'Delete all data', 'Удалить все данные');
+  String get resetAllSub => _t('Tillar, kitoblar, so\'zlar va statistika', 'Languages, books, words and stats', 'Языки, книги, слова и статистика');
+  String get resetAllMsg => _t(
+      'Hamma tillar, kitoblar, so\'zlar, XP va statistika o\'chiriladi. Sozlamalar qoladi. Qaytarib bo\'lmaydi.',
+      'All languages, books, words, XP and stats will be deleted. Settings stay. This can\'t be undone.',
+      'Все языки, книги, слова, XP и статистика будут удалены. Настройки сохранятся. Это необратимо.');
+  String get resetDone => _t('Hammasi tozalandi', 'Everything was deleted', 'Всё удалено');
+
   // ---------------- Settings ----------------
   String get appLanguage => _t('Ilova tili', 'App language', 'Язык приложения');
   String get cardDisplay => _t('Karta ko\'rinishi', 'Card display', 'Вид карточки');
@@ -496,13 +546,12 @@ class S {
   String get themeSystem => _t('Tizim', 'System', 'Система');
   String get themeLight => _t('Yorug\'', 'Light', 'Светлая');
   String get themeDark => _t('Qorong\'i', 'Dark', 'Тёмная');
-  String get autofillSection =>
-      _t('Avto-to\'ldirish (inglizcha so\'zlar)', 'Auto-fill (English words)', 'Автозаполнение (англ. слова)');
+  String get autofillSection => _t('AI (Gemini) va tarjima', 'AI (Gemini) & translation', 'ИИ (Gemini) и перевод');
   String get translateInto => _t('Tarjima tili', 'Translate into', 'Язык перевода');
   String get geminiInfo => _t(
-      'Gemini kaliti bo\'lsa, tarjimalar sifatliroq bo\'ladi. Bo\'lmasa bepul Dictionary + MyMemory ishlatiladi. Kalit faqat shu qurilmada saqlanadi.',
-      'With a Gemini key translations are better. Without it, the free Dictionary + MyMemory APIs are used. The key is stored only on this device.',
-      'С ключом Gemini переводы точнее. Без него используются бесплатные Dictionary + MyMemory. Ключ хранится только на этом устройстве.');
+      'Gemini kaliti PDF\'dan so\'z olish va sifatli tarjima uchun kerak. Bepul olish: aistudio.google.com/apikey. Kalit faqat shu qurilmada saqlanadi.',
+      'A Gemini key is needed for PDF import and better translations. Get one free at aistudio.google.com/apikey. It is stored only on this device.',
+      'Ключ Gemini нужен для импорта из PDF и лучших переводов. Бесплатно: aistudio.google.com/apikey. Хранится только на этом устройстве.');
   String get geminiKey => _t('Gemini API kaliti (ixtiyoriy)', 'Gemini API key (optional)', 'Ключ Gemini API (необязательно)');
   String get geminiModel => _t('Gemini modeli', 'Gemini model', 'Модель Gemini');
   String get geminiModelHelp => _t('masalan: gemini-2.5-flash', 'e.g. gemini-2.5-flash', 'например: gemini-2.5-flash');

@@ -103,61 +103,17 @@ Future<String?> showTextInput(
   );
 }
 
-/// Dropdown value meaning "top level, no folder".
-const kRootFolder = '__root__';
-
-/// Folder picker entries: top level + every folder ("Arabcha › Kitob 1").
-/// [onlyRoots] limits the list to top-level folders (for moving a folder).
-List<DropdownMenuEntry<String>> folderEntries(BuildContext context, {bool onlyRoots = false, String? exclude}) {
-  final lib = context.read<LibraryProvider>();
-  final t = S.of(context);
-  return [
-    DropdownMenuEntry(value: kRootFolder, label: t.topLevel, leadingIcon: const Icon(Icons.home_outlined)),
-    for (final f in lib.foldersFlat)
-      if ((!onlyRoots || f.isRoot) && f.id != exclude)
-        DropdownMenuEntry(
-          value: f.id,
-          label: lib.folderPathNames(f.id).join(' › '),
-          leadingIcon: Icon(f.isRoot ? Icons.folder_rounded : Icons.subdirectory_arrow_right_rounded),
-        ),
-  ];
-}
-
-/// Asks the user to pick a folder. Returns kRootFolder for top level.
-Future<String?> pickFolder(BuildContext context, {required String title, String? current, bool onlyRoots = false, String? exclude}) {
-  final t = S.of(context);
-  final entries = folderEntries(context, onlyRoots: onlyRoots, exclude: exclude);
-  var value = current ?? kRootFolder;
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: 420,
-        child: DropdownMenu<String>(
-          initialSelection: value,
-          expandedInsets: EdgeInsets.zero,
-          label: Text(t.folder),
-          dropdownMenuEntries: entries,
-          onSelected: (v) => value = v ?? kRootFolder,
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t.cancel)),
-        FilledButton(onPressed: () => Navigator.pop(ctx, value), child: Text(t.move)),
-      ],
-    ),
-  );
-}
-
-/// Result of the deck dialog. [folderId] null = top level.
+/// Result of the book dialog: name + language (folder) id.
 class DeckFormResult {
   DeckFormResult(this.name, this.folderId);
   final String name;
-  final String? folderId;
+  final String folderId;
 }
 
-/// Asks for a deck name and the folder to put it in.
+const _newLang = '__new__';
+
+/// Asks for a book name and its language. A new language can be created
+/// right in the dialog.
 Future<DeckFormResult?> showDeckForm(
   BuildContext context, {
   required String title,
@@ -167,21 +123,28 @@ Future<DeckFormResult?> showDeckForm(
   String? subtitle,
 }) {
   final t = S.of(context);
-  final entries = folderEntries(context);
+  final lib = context.read<LibraryProvider>();
+  final langs = lib.subfolders(null);
   final nameCtrl = TextEditingController(text: name);
-  var folder = folderId ?? kRootFolder;
+  final langCtrl = TextEditingController();
+  var lang = folderId ?? (langs.isNotEmpty ? langs.first.id : null);
+  var creating = langs.isEmpty;
   final formKey = GlobalKey<FormState>();
 
   return showDialog<DeckFormResult>(
     context: context,
-    builder: (ctx) {
-      void submit() {
+    builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+      Future<void> submit() async {
         if (!formKey.currentState!.validate()) return;
-        Navigator.pop(ctx, DeckFormResult(nameCtrl.text.trim(), folder == kRootFolder ? null : folder));
+        var id = lang;
+        if (creating) id = await lib.ensureLanguage(langCtrl.text);
+        if (id == null || !ctx.mounted) return;
+        Navigator.pop(ctx, DeckFormResult(nameCtrl.text.trim(), id));
       }
 
       return AlertDialog(
         title: Text(title),
+        scrollable: true,
         content: SizedBox(
           width: 420,
           child: Form(
@@ -200,20 +163,53 @@ Future<DeckFormResult?> showDeckForm(
                   decoration: InputDecoration(
                     labelText: t.deckName,
                     hintText: t.deckNameHint,
+                    prefixIcon: const Icon(Icons.menu_book_rounded),
                     border: const OutlineInputBorder(),
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty) ? t.enterName : null,
                   onFieldSubmitted: (_) => submit(),
                 ),
                 const SizedBox(height: 16),
-                DropdownMenu<String>(
-                  initialSelection: folder,
-                  expandedInsets: EdgeInsets.zero,
-                  label: Text(t.folder),
-                  leadingIcon: const Icon(Icons.folder_outlined),
-                  dropdownMenuEntries: entries,
-                  onSelected: (v) => folder = v ?? kRootFolder,
-                ),
+                if (creating) ...[
+                  TextFormField(
+                    controller: langCtrl,
+                    decoration: InputDecoration(
+                      labelText: t.languageName,
+                      hintText: t.folderHint,
+                      prefixIcon: const Icon(Icons.translate_rounded),
+                      border: const OutlineInputBorder(),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? t.enterName : null,
+                    onFieldSubmitted: (_) => submit(),
+                  ),
+                  if (langs.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () => setS(() => creating = false),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                      label: Text(t.chooseExisting),
+                    ),
+                ] else
+                  DropdownMenu<String>(
+                    initialSelection: lang,
+                    expandedInsets: EdgeInsets.zero,
+                    label: Text(t.folder),
+                    leadingIcon: const Icon(Icons.translate_rounded),
+                    dropdownMenuEntries: [
+                      for (final f in langs) DropdownMenuEntry(value: f.id, label: f.name),
+                      DropdownMenuEntry(
+                        value: _newLang,
+                        label: t.newFolder,
+                        leadingIcon: const Icon(Icons.add_rounded),
+                      ),
+                    ],
+                    onSelected: (v) {
+                      if (v == _newLang) {
+                        setS(() => creating = true);
+                      } else {
+                        lang = v;
+                      }
+                    },
+                  ),
               ],
             ),
           ),
@@ -223,7 +219,7 @@ Future<DeckFormResult?> showDeckForm(
           FilledButton(onPressed: submit, child: Text(okLabel ?? t.save)),
         ],
       );
-    },
+    }),
   );
 }
 
