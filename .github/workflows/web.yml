@@ -3,7 +3,7 @@ name: Web (iPhone HTML version)
 on:
   workflow_dispatch:
   push:
-    branches: [main, web-build]
+    branches: [main]
 
 permissions:
   contents: write
