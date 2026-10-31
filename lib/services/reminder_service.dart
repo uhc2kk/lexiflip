@@ -3,7 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// Daily "time to practise" reminder (Android + Windows).
+/// Daily "time to practise" reminder (Android, iOS, Windows).
 ///
 /// Instead of one repeating notification, the next [_days] days are
 /// scheduled one by one. That way:
@@ -23,6 +23,7 @@ class ReminderService {
   static bool get supported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.windows);
 
   Future<bool> _init() async {
@@ -32,6 +33,11 @@ class ReminderService {
       tzdata.initializeTimeZones();
       const settings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
         windows: WindowsInitializationSettings(
           appName: 'LexiFlip',
           appUserModelId: 'Uz.LexiFlip.App.1',
@@ -46,13 +52,18 @@ class ReminderService {
     return _ready;
   }
 
-  /// Asks for permission where needed (Android 13+). Returns false if denied.
+  /// Asks for permission where needed (Android 13+, iOS). Returns false if denied.
   Future<bool> requestPermission() async {
     if (!await _init()) return false;
     try {
       final android = _plugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (android != null) return await android.requestNotificationsPermission() ?? false;
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+      if (ios != null) {
+        return await ios.requestPermissions(alert: true, badge: true, sound: true) ?? false;
+      }
     } catch (e) {
       debugPrint('Reminder permission failed: $e');
     }
@@ -84,6 +95,7 @@ class ReminderService {
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
         ),
+        iOS: DarwinNotificationDetails(),
         windows: WindowsNotificationDetails(),
       );
       for (var i = 0; i < _days; i++) {

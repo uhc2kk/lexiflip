@@ -462,9 +462,9 @@ class S {
       'A notification at the chosen time if today\'s goal isn\'t done yet',
       'Уведомление в выбранное время, если цель дня не выполнена');
   String get reminderUnsupported => _t(
-      'Bu qurilmada mavjud emas (faqat Windows va Android)',
-      'Not available on this device (Windows and Android only)',
-      'Недоступно на этом устройстве (только Windows и Android)');
+      'Bu qurilmada mavjud emas (faqat Windows, Android va iPhone)',
+      'Not available on this device (Windows, Android and iPhone only)',
+      'Недоступно на этом устройстве (только Windows, Android и iPhone)');
   String get reminderTime => _t('Eslatma vaqti', 'Reminder time', 'Время напоминания');
   String get reminderDenied => _t(
       'Bildirishnomaga ruxsat berilmadi. Telefon sozlamalaridan LexiFlip\'ga ruxsat bering.',
