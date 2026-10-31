@@ -1,0 +1,52 @@
+name: Web (iPhone HTML version)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Build web app and publish to gh-pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate web platform folder
+        run: flutter create . --project-name lexiflip --org uz.lexiflip --platforms=web
+      - name: Patch web files (name, home-screen app mode)
+        run: python3 tool/patch_web.py
+      - run: flutter pub get
+      - name: Build web
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build web --release --base-href /lexiflip/ --no-web-resources-cdn 2>&1 | tee build.log
+      - name: Show build errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -nE "error|Error|Exception" build.log | head -40 > err.txt || true
+          tail -40 build.log >> err.txt
+          msg=$(sed 's/%/%25/g' err.txt | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Web build log::${msg}"
+      - name: Add 404 page and disable Jekyll
+        run: |
+          cp build/web/index.html build/web/404.html
+          touch build/web/.nojekyll
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/web
+          publish_branch: gh-pages
+          force_orphan: true
